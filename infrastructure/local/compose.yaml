@@ -1,0 +1,28 @@
+name: aegisops-local
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: aegisops-mysql
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    ports:
+      - "3307:3306"
+
+    volumes:
+      - aegisops-mysql-data:/var/lib/mysql
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -hadmin ping -h localhost -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  aegisops-mysql-data:
