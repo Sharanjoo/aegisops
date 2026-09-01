@@ -113,4 +113,12 @@ public class IncidentEntity {
     public Instant getUpdatedAt() {
         return updatedAt;
     }
+
+    public void updateStatus(
+            IncidentStatus status,
+            Instant updatedAt
+    ) {
+        this.status = status;
+        this.updatedAt = updatedAt;
+    }
 }

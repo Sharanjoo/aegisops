@@ -1,9 +1,12 @@
 package io.aegisops.incident.application;
 
 import io.aegisops.incident.api.CreateIncidentRequest;
+import io.aegisops.incident.api.UpdateIncidentStatusRequest;
 import io.aegisops.incident.domain.Incident;
 import io.aegisops.incident.domain.IncidentStatus;
 import io.aegisops.incident.exception.IncidentNotFoundException;
+import io.aegisops.incident.exception.InvalidIncidentStatusTransitionException;
+import io.aegisops.incident.persistence.IncidentEntity;
 import io.aegisops.incident.persistence.IncidentJpaRepository;
 import io.aegisops.incident.persistence.IncidentPersistenceMapper;
 import org.springframework.stereotype.Service;
@@ -66,5 +69,36 @@ public class IncidentApplicationService {
                 .orElseThrow(() ->
                         new IncidentNotFoundException(incidentId)
                 );
+    }
+
+    public Incident updateStatus(
+            UUID incidentId,
+            UpdateIncidentStatusRequest request
+    ) {
+        IncidentEntity incidentEntity = incidentRepository
+                .findById(incidentId.toString())
+                .orElseThrow(() ->
+                        new IncidentNotFoundException(incidentId)
+                );
+
+        IncidentStatus currentStatus = incidentEntity.getStatus();
+        IncidentStatus targetStatus = request.status();
+
+        if (currentStatus == targetStatus) {
+            return incidentMapper.toDomain(incidentEntity);
+        }
+
+        if (!currentStatus.canTransitionTo(targetStatus)) {
+            throw new InvalidIncidentStatusTransitionException(
+                    currentStatus,
+                    targetStatus
+            );
+        }
+
+        incidentEntity.updateStatus(targetStatus, Instant.now());
+
+        return incidentMapper.toDomain(
+                incidentRepository.save(incidentEntity)
+        );
     }
 }

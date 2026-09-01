@@ -1,6 +1,7 @@
 package io.aegisops.incident.api;
 
 import io.aegisops.incident.exception.IncidentNotFoundException;
+import io.aegisops.incident.exception.InvalidIncidentStatusTransitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +26,21 @@ public class GlobalExceptionHandler {
         problem.setTitle("Incident not found");
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
+    }
+
+    @ExceptionHandler(InvalidIncidentStatusTransitionException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidStatusTransition(
+            InvalidIncidentStatusTransitionException exception
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+        problem.setTitle("Invalid incident status transition");
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(problem);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
