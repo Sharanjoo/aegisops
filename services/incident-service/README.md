@@ -4,6 +4,10 @@ Spring Boot service responsible for creating, retrieving, persisting, and
 
 managing the lifecycle of AegisOps incidents.
 
+The service publishes versioned incident events to Apache Kafka using the
+
+transactional outbox pattern.
+
 ## Technology
 
 - Java 21
@@ -18,13 +22,15 @@ managing the lifecycle of AegisOps incidents.
 
 - Flyway
 
+- Apache Kafka
+
+- Transactional outbox
+
 - Testcontainers
 
 - Maven
 
 ## Architecture
-
-The service separates its API, application, domain, and persistence layers:
 
 ```text
 
@@ -32,15 +38,27 @@ REST Controller
 
     -> Application Service
 
-        -> JPA Repository
+        -> MySQL transaction
 
-            -> MySQL
+            -> Incidents table
+
+            -> Outbox events table
+
+Scheduled Outbox Publisher
+
+    -> Pending outbox events
+
+        -> Apache Kafka
+
+            -> Future consumers and remediation services
 
 ```
 
-Flyway manages the database schema, while integration tests use a temporary
+Incident changes and their corresponding events are committed in the same
 
-MySQL Testcontainer.
+MySQL transaction. This prevents an incident from being persisted without its
+
+event being recorded.
 
 ## REST API
 
@@ -74,21 +92,69 @@ Sending the current status again is idempotent. Backward or invalid
 
 transitions return HTTP `409 Conflict`.
 
-Example status update:
+## Kafka Events
 
-```json
+Topic:
 
-{
+```text
 
-  "status": "ACKNOWLEDGED"
-
-}
+[aegisops.incident.events](http://aegisops.incident.events).v1
 
 ```
 
+Current event types:
+
+- `INCIDENT_CREATED`
+
+- `INCIDENT_STATUS_CHANGED`
+
+The Kafka record key is the incident ID. This preserves event ordering for a
+
+specific incident within a Kafka partition.
+
+Every event contains:
+
+- Unique event ID
+
+- Event type
+
+- Schema version
+
+- Event timestamp
+
+- Incident ID
+
+- Service name
+
+- Severity
+
+- Current status
+
+- Previous status when applicable
+
+## Delivery Semantics
+
+The outbox publisher provides at-least-once delivery:
+
+1. The incident and outbox event are committed atomically.
+
+2. The publisher reads pending events.
+
+3. Kafka acknowledges the publication.
+
+4. The outbox row is marked `PUBLISHED`.
+
+5. Failed publications remain `PENDING` and are retried.
+
+Consumers should deduplicate events using `eventId` because an event can be
+
+published more than once if Kafka succeeds but the database status update
+
+fails.
+
 ## Run Locally
 
-From the repository root, start MySQL:
+From the repository root, start MySQL and Kafka:
 
 ```powershell
 
@@ -96,11 +162,23 @@ docker compose `
 
     -f .\infrastructure\local\compose.yaml `
 
-    up -d mysql
+    up -d mysql kafka
 
 ```
 
-Set the local database password:
+Verify the containers:
+
+```powershell
+
+docker compose `
+
+    -f .\infrastructure\local\compose.yaml `
+
+    ps
+
+```
+
+Set the database password:
 
 ```powershell
 
@@ -120,9 +198,29 @@ cd .\services\incident-service
 
 The service runs at `http://localhost:8080`.
 
+## Configuration
+
+| Environment variable | Default | Purpose |
+
+|---|---|---|
+
+| `AEGISOPS_DB_URL` | `jdbc:mysql://localhost:3307/aegisops...` | MySQL connection |
+
+| `AEGISOPS_DB_USERNAME` | `aegisops` | MySQL username |
+
+| `AEGISOPS_DB_PASSWORD` | Empty | MySQL password |
+
+| `AEGISOPS_KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka broker |
+
+| `AEGISOPS_INCIDENT_EVENTS_TOPIC` | `aegisops.incident.events.v1` | Event topic |
+
+| `AEGISOPS_OUTBOX_PUBLISH_INTERVAL_MS` | `1000` | Publisher interval |
+
 ## Run Tests
 
-Docker must be running because integration tests use Testcontainers.
+Docker must be running. Integration tests automatically start isolated MySQL
+
+and Kafka containers.
 
 ```powershell
 
