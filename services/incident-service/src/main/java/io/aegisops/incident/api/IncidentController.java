@@ -5,6 +5,7 @@ import io.aegisops.incident.domain.Incident;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -44,5 +45,13 @@ public class IncidentController {
     @GetMapping("/{incidentId}")
     public Incident findById(@PathVariable UUID incidentId) {
         return incidentService.findById(incidentId);
+    }
+
+    @PatchMapping("/{incidentId}/status")
+    public Incident updateStatus(
+            @PathVariable UUID incidentId,
+            @Valid @RequestBody UpdateIncidentStatusRequest request
+    ) {
+        return incidentService.updateStatus(incidentId, request);
     }
 }
