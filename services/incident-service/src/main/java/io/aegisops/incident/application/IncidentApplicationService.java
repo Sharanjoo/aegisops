@@ -6,6 +6,8 @@ import io.aegisops.incident.domain.Incident;
 import io.aegisops.incident.domain.IncidentStatus;
 import io.aegisops.incident.exception.IncidentNotFoundException;
 import io.aegisops.incident.exception.InvalidIncidentStatusTransitionException;
+import io.aegisops.incident.messaging.IncidentEvent;
+import io.aegisops.incident.messaging.outbox.IncidentOutboxWriter;
 import io.aegisops.incident.persistence.IncidentEntity;
 import io.aegisops.incident.persistence.IncidentJpaRepository;
 import io.aegisops.incident.persistence.IncidentPersistenceMapper;
@@ -22,13 +24,16 @@ public class IncidentApplicationService {
 
     private final IncidentJpaRepository incidentRepository;
     private final IncidentPersistenceMapper incidentMapper;
+    private final IncidentOutboxWriter outboxWriter;
 
     public IncidentApplicationService(
             IncidentJpaRepository incidentRepository,
-            IncidentPersistenceMapper incidentMapper
+            IncidentPersistenceMapper incidentMapper,
+            IncidentOutboxWriter outboxWriter
     ) {
         this.incidentRepository = incidentRepository;
         this.incidentMapper = incidentMapper;
+        this.outboxWriter = outboxWriter;
     }
 
     public Incident create(CreateIncidentRequest request) {
@@ -45,11 +50,17 @@ public class IncidentApplicationService {
                 now
         );
 
-        return incidentMapper.toDomain(
+        Incident savedIncident = incidentMapper.toDomain(
                 incidentRepository.save(
                         incidentMapper.toEntity(incident)
                 )
         );
+
+        outboxWriter.append(
+                IncidentEvent.created(savedIncident)
+        );
+
+        return savedIncident;
     }
 
     @Transactional(readOnly = true)
@@ -97,8 +108,17 @@ public class IncidentApplicationService {
 
         incidentEntity.updateStatus(targetStatus, Instant.now());
 
-        return incidentMapper.toDomain(
+        Incident updatedIncident = incidentMapper.toDomain(
                 incidentRepository.save(incidentEntity)
         );
+
+        outboxWriter.append(
+                IncidentEvent.statusChanged(
+                        updatedIncident,
+                        currentStatus
+                )
+        );
+
+        return updatedIncident;
     }
 }
