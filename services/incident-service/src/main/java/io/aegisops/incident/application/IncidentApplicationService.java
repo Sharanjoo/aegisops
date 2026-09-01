@@ -4,26 +4,35 @@ import io.aegisops.incident.api.CreateIncidentRequest;
 import io.aegisops.incident.domain.Incident;
 import io.aegisops.incident.domain.IncidentStatus;
 import io.aegisops.incident.exception.IncidentNotFoundException;
+import io.aegisops.incident.persistence.IncidentJpaRepository;
+import io.aegisops.incident.persistence.IncidentPersistenceMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
+@Transactional
 public class IncidentApplicationService {
 
-    private final Map<UUID, Incident> incidents = new ConcurrentHashMap<>();
+    private final IncidentJpaRepository incidentRepository;
+    private final IncidentPersistenceMapper incidentMapper;
+
+    public IncidentApplicationService(
+            IncidentJpaRepository incidentRepository,
+            IncidentPersistenceMapper incidentMapper
+    ) {
+        this.incidentRepository = incidentRepository;
+        this.incidentMapper = incidentMapper;
+    }
 
     public Incident create(CreateIncidentRequest request) {
         Instant now = Instant.now();
-        UUID incidentId = UUID.randomUUID();
 
         Incident incident = new Incident(
-                incidentId,
+                UUID.randomUUID(),
                 request.serviceName(),
                 request.title(),
                 request.description() == null ? "" : request.description(),
@@ -33,24 +42,29 @@ public class IncidentApplicationService {
                 now
         );
 
-        incidents.put(incidentId, incident);
-        return incident;
+        return incidentMapper.toDomain(
+                incidentRepository.save(
+                        incidentMapper.toEntity(incident)
+                )
+        );
     }
 
+    @Transactional(readOnly = true)
     public List<Incident> findAll() {
-        return incidents.values()
+        return incidentRepository
+                .findAllByOrderByCreatedAtDesc()
                 .stream()
-                .sorted(Comparator.comparing(Incident::createdAt).reversed())
+                .map(incidentMapper::toDomain)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public Incident findById(UUID incidentId) {
-        Incident incident = incidents.get(incidentId);
-
-        if (incident == null) {
-            throw new IncidentNotFoundException(incidentId);
-        }
-
-        return incident;
+        return incidentRepository
+                .findById(incidentId.toString())
+                .map(incidentMapper::toDomain)
+                .orElseThrow(() ->
+                        new IncidentNotFoundException(incidentId)
+                );
     }
 }
