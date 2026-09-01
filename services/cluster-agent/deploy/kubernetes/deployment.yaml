@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-agent
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: cluster-agent
+    app.kubernetes.io/part-of: aegisops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cluster-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cluster-agent
+        app.kubernetes.io/part-of: aegisops
+    spec:
+      serviceAccountName: cluster-agent
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: cluster-agent
+          image: aegisops/cluster-agent:dev
+          imagePullPolicy: IfNotPresent
+
+          env:
+            - name: AEGISOPS_CLUSTER_NAME
+              value: kind-aegisops-dev
+            - name: AEGISOPS_INCIDENT_SERVICE_URL
+              value: http://host.docker.internal:8080
+            - name: AEGISOPS_INCIDENT_SERVICE_TIMEOUT
+              value: 5s
+            - name: AEGISOPS_FINDING_COOLDOWN
+              value: 15m
+
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

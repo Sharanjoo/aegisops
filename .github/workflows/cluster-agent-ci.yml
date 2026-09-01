@@ -1,0 +1,76 @@
+name: Cluster Agent CI
+
+on:
+  pull_request:
+    paths:
+      - "services/cluster-agent/**"
+      - ".github/workflows/cluster-agent-ci.yml"
+
+  push:
+    branches:
+      - main
+    paths:
+      - "services/cluster-agent/**"
+      - ".github/workflows/cluster-agent-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cluster-agent-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Go Tests and Container Build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: services/cluster-agent
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: services/cluster-agent/go.mod
+          cache: true
+          cache-dependency-path: services/cluster-agent/go.sum
+
+      - name: Verify Go module files
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Verify formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+
+          if [[ -n "${unformatted}" ]]; then
+            echo "The following files require gofmt:"
+            echo "${unformatted}"
+            exit 1
+          fi
+
+      - name: Run static analysis
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Build executable
+        run: |
+          go build \
+            -trimpath \
+            -o "${RUNNER_TEMP}/cluster-agent" \
+            ./cmd/agent
+
+      - name: Build container image
+        run: |
+          docker build \
+            --tag aegisops/cluster-agent:ci \
+            .
