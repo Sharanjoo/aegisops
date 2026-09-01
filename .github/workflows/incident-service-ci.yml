@@ -1,0 +1,42 @@
+name: Incident Service CI
+
+on:
+  pull_request:
+    paths:
+      - "services/incident-service/**"
+      - ".github/workflows/incident-service-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "services/incident-service/**"
+      - ".github/workflows/incident-service-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Maven Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: services/incident-service/pom.xml
+
+      - name: Make Maven wrapper executable
+        working-directory: services/incident-service
+        run: chmod +x mvnw
+
+      - name: Run tests
+        working-directory: services/incident-service
+        run: ./mvnw --batch-mode clean test
+      
