@@ -1,109 +1,109 @@
 import {
-    Kafka,
-    logLevel as kafkaLogLevel
-  } from "kafkajs";
+  Kafka,
+  logLevel as kafkaLogLevel
+} from "kafkajs";
 
-  import { buildApp } from "./app.js";
-  import { loadConfig } from "./config.js";
-  import { IncidentEventConsumer } from "./kafka/incident-consumer.js";
-  import { ConnectionHub } from "./websocket/connection-hub.js";
+import { buildApp } from "./app.js";
+import { loadConfig } from "./config.js";
+import { IncidentEventConsumer } from "./kafka/incident-consumer.js";
+import { ConnectionHub } from "./websocket/connection-hub.js";
 
-  const config = loadConfig();
-  const connectionHub = new ConnectionHub();
+const config = loadConfig();
+const connectionHub = new ConnectionHub();
 
-  const app = await buildApp(config, {
-    connectionHub
-  });
+const app = await buildApp(config, {
+  connectionHub
+});
 
-  const kafka = new Kafka({
-    clientId: config.kafkaClientId,
-    brokers: config.kafkaBrokers,
-    logLevel: kafkaLogLevel.WARN
-  });
+const kafka = new Kafka({
+  clientId: config.kafkaClientId,
+  brokers: config.kafkaBrokers,
+  logLevel: kafkaLogLevel.WARN
+});
 
-  const incidentConsumer = new IncidentEventConsumer(
-    kafka.consumer({
-      groupId: config.kafkaGroupId
-    }),
-    config.incidentTopic,
-    connectionHub,
-    app.log
-  );
+const incidentConsumer = new IncidentEventConsumer(
+  kafka.consumer({
+    groupId: config.kafkaGroupId
+  }),
+  config.incidentTopic,
+  connectionHub,
+  app.log
+);
 
-  let shuttingDown = false;
+let shuttingDown = false;
 
-  async function shutdown(
-    signal: NodeJS.Signals
-  ): Promise<void> {
-    if (shuttingDown) {
-      return;
-    }
-
-    shuttingDown = true;
-
-    app.log.info(
-      {
-        signal
-      },
-      "shutdown requested"
-    );
-
-    const results = await Promise.allSettled([
-      incidentConsumer.stop(),
-      app.close()
-    ]);
-
-    const failures = results.filter(
-      (result) => result.status === "rejected"
-    );
-
-    if (failures.length > 0) {
-      app.log.error(
-        {
-          failures
-        },
-        "graceful shutdown failed"
-      );
-
-      process.exitCode = 1;
-    }
+async function shutdown(
+  signal: NodeJS.Signals
+): Promise<void> {
+  if (shuttingDown) {
+    return;
   }
 
-  process.once("SIGINT", () => {
-    void shutdown("SIGINT");
-  });
+  shuttingDown = true;
 
-  process.once("SIGTERM", () => {
-    void shutdown("SIGTERM");
-  });
+  app.log.info(
+    {
+      signal
+    },
+    "shutdown requested"
+  );
 
-  try {
-    await incidentConsumer.start();
+  const results = await Promise.allSettled([
+    incidentConsumer.stop(),
+    app.close()
+  ]);
 
-    await app.listen({
-      host: config.host,
-      port: config.port
-    });
+  const failures = results.filter(
+    (result) => result.status === "rejected"
+  );
 
-    app.log.info(
-      {
-        topic: config.incidentTopic,
-        brokers: config.kafkaBrokers
-      },
-      "realtime gateway started"
-    );
-  } catch (error) {
+  if (failures.length > 0) {
     app.log.error(
       {
-        error
+        failures
       },
-      "realtime gateway failed to start"
+      "graceful shutdown failed"
     );
-
-    await Promise.allSettled([
-      incidentConsumer.stop(),
-      app.close()
-    ]);
 
     process.exitCode = 1;
   }
+}
+
+process.once("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+
+process.once("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
+
+try {
+  await incidentConsumer.start();
+
+  await app.listen({
+    host: config.host,
+    port: config.port
+  });
+
+  app.log.info(
+    {
+      topic: config.incidentTopic,
+      brokers: config.kafkaBrokers
+    },
+    "realtime gateway started"
+  );
+} catch (error) {
+  app.log.error(
+    {
+      error
+    },
+    "realtime gateway failed to start"
+  );
+
+  await Promise.allSettled([
+    incidentConsumer.stop(),
+    app.close()
+  ]);
+
+  process.exitCode = 1;
+}
