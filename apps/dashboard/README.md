@@ -1,8 +1,10 @@
 # AegisOps Incident Dashboard
 
 React and TypeScript operator dashboard for AegisOps incidents. Loads the
-current incident snapshot from the incident service's REST API, then keeps
-it live with events from the realtime gateway's WebSocket stream.
+current incident snapshot from the incident service's REST API, then
+reconciles it against compact WebSocket change notifications - each one
+triggers a REST fetch of the complete incident before anything reaches the
+screen.
 
 ## Architecture
 
@@ -11,20 +13,25 @@ Incident service REST API (GET /api/v1/incidents)
     -> initial incident snapshot
         -> dashboard state (src/state/incidentsReducer.ts)
             <- realtime gateway WebSocket (/ws/incidents)
-               INCIDENT_CREATED / INCIDENT_STATUS_CHANGED events
+               compact INCIDENT_CREATED / INCIDENT_STATUS_CHANGED notifications
+                   -> GET /api/v1/incidents/{incidentId}
+                       -> complete incident upserted into dashboard state
 ```
 
-REST and WebSocket play different, non-overlapping roles:
+REST is the only source of displayable incident data; the WebSocket is
+only ever a *notification* channel:
 
-- **REST** (`services/incident-service`) is the source of truth for which
-  incidents exist and their full details (title, description, timestamps).
-  It is fetched once on load.
-- **WebSocket** (`services/realtime-gateway`) only pushes *changes* going
-  forward - it is not queried for history, and disconnected clients do not
-  receive replayed messages (see the realtime gateway's own README under
-  "Delivery Semantics"). The dashboard never treats the socket as storage:
-  losing the connection means missing live updates, not losing data, and
-  reconnecting resumes the stream without re-fetching the snapshot.
+- **REST** (`services/incident-service`) is the source of truth for every
+  incident field. `GET /api/v1/incidents` loads the initial snapshot, and
+  `GET /api/v1/incidents/{incidentId}` is what actually populates or
+  updates a row - always, for both event types.
+- **WebSocket** (`services/realtime-gateway`) only pushes compact *change
+  notifications* - `eventId`, `eventType`, `incidentId` and a few other
+  fields (see `types/incident.ts`), never the fields a row needs to
+  display. Every valid notification triggers a detail fetch; the
+  notification's own fields are never written into dashboard state. See
+  **Event reconciliation model** below for the full sequence, including
+  deduplication, retry, and reconnection recovery.
 
 Code is split by responsibility:
 
@@ -33,25 +40,90 @@ Code is split by responsibility:
 | REST client + response validation | `src/api/incidentApi.ts` |
 | WebSocket lifecycle + backoff | `src/realtime/useIncidentSocket.ts` |
 | Event schema validation | `src/realtime/validateIncidentEvent.ts` |
-| State reconciliation (dedup, upsert) | `src/state/incidentsReducer.ts` |
+| State reconciliation (dedup, timestamp-aware upsert) | `src/state/incidentsReducer.ts` |
 | Search/filter logic | `src/state/filterIncidents.ts` |
-| Snapshot + socket orchestration | `src/state/useIncidentDashboard.ts` |
+| Snapshot + socket orchestration, hydration, retry | `src/state/useIncidentDashboard.ts` |
 | Presentational components | `src/components/` |
 
-### Frontend representation differences
+### Event reconciliation model
 
-The realtime gateway's event payload (see `services/realtime-gateway/README.md`)
-does not carry an incident's `title` or `description` - only the REST
-snapshot does. If an `INCIDENT_CREATED` event arrives for an incident the
-dashboard has not seen in its REST snapshot, it is inserted with
-`title: null` and `description: null`, and the table shows "Details
-pending…" until a future snapshot reload supplies them. `IncidentStatus`
-and `IncidentSeverity` on the wire are also only validated by the gateway
-as non-empty strings, not as members of the incident service's actual
-enums; the dashboard defensively falls back to the incident's current
-value for anything outside `LOW/MEDIUM/HIGH/CRITICAL` or
-`OPEN/ACKNOWLEDGED/RESOLVED` rather than rendering (or crashing on) an
-unrecognized value.
+WebSocket messages are **notifications that something changed**, not
+incident records - `eventId`, `eventType`, `incidentId`, and a few other
+compact fields (see `types/incident.ts`), never the fields a row needs to
+display. The dashboard does not claim exactly-once delivery of anything;
+instead it treats the incident service as the one source of truth and
+continuously reconciles toward it, tolerating dropped, delayed, or
+redelivered notifications along the way.
+
+**Normal path - per-event hydration:**
+
+1. On mount, load the initial snapshot from `GET /api/v1/incidents`.
+   WebSocket notifications that arrive before this succeeds are buffered
+   (bounded and deduplicated - see below), not processed immediately or
+   dropped, and are replayed once it does.
+2. For every valid, not-yet-processed `INCIDENT_CREATED` or
+   `INCIDENT_STATUS_CHANGED` notification: fetch the complete incident via
+   `GET /api/v1/incidents/{incidentId}` and upsert that REST response into
+   state. This applies equally whether or not the incident was already in
+   the snapshot - an incident created entirely after page load is fetched
+   and inserted the same way an update to a known incident is applied.
+3. A notification is marked processed (added to a capped 1,000-entry
+   `eventId` cache) only once its incident has actually been hydrated and
+   applied - never before, and never for a notification whose hydration
+   failed.
+4. A failed detail fetch retries up to 3 times with capped backoff (500ms,
+   1000ms). A notification that never succeeds is not marked processed, so
+   a later redelivery can still recover it - but exhausting these retries
+   also falls back to the reconciliation refresh below, so recovery does
+   not depend on redelivery happening at all.
+5. A duplicate or redelivered notification for an `eventId` already
+   processed - or still being hydrated - is ignored; only one detail fetch
+   is ever in flight per `eventId`.
+
+**Fallback path - coalesced snapshot reconciliation:**
+
+One mechanism (`triggerReconciliationRefresh` in `useIncidentDashboard.ts`)
+handles every situation where the per-event path alone cannot be trusted
+to recover state:
+
+- a detail hydration that exhausts its retries (step 4 above),
+- the startup buffer overflowing its cap (see below), and
+- the WebSocket reconnecting after a disconnection (not the first
+  connection - the initial snapshot and buffered events already cover
+  that window).
+
+Whichever of these triggers it, the refresh re-fetches
+`GET /api/v1/incidents` and merges it into state incident-by-incident.
+Concurrent triggers share one in-flight refresh cycle rather than each
+starting a separate request. If it fails, it retries up to 3 times with
+capped backoff (1s, 2s); if every attempt fails, a non-fatal warning
+appears in the dashboard (`ReconciliationBanner`) with a manual "Retry"
+action, which reuses the same mechanism. A later successful refresh -
+automatic or manual - clears that warning. One failed live update, or one
+failed refresh cycle, never blanks the already-loaded dashboard.
+
+**Timestamp safety, applied everywhere an incident is written into
+state** (hydration, the initial snapshot's per-incident upserts do not
+need it since state starts empty, and every reconciliation-refresh merge):
+the incoming incident's `updatedAt` is compared against whatever is
+already in state. A strictly newer `updatedAt` replaces it; a strictly
+older one is discarded; an **equal** `updatedAt` also retains the existing
+value rather than letting network arrival order decide the winner. This
+is what stops a slow or replayed REST response from regressing state a
+faster or newer response already established.
+
+**Startup buffer:** capped at 500 entries and deduplicated by `eventId`.
+A notification that would exceed the cap is dropped, but that loss is
+recorded and covered by the same reconciliation refresh once the initial
+snapshot succeeds - recovery does not depend on knowing which specific
+notification overflowed.
+
+`IncidentStatus` and `IncidentSeverity` in the notification are only
+validated by the realtime gateway as non-empty strings, not as members of
+the incident service's actual enums - but since the notification's fields
+are never written into dashboard state (only the REST response is), this
+cannot produce an incident with an invalid severity or status; an
+out-of-range value simply never survives to influence what is displayed.
 
 ### Connection states
 
@@ -104,8 +176,10 @@ npm run build       # tsc -b && vite build
 ## Expected backend dependencies
 
 - **Incident service** (`services/incident-service`, port 8080): `GET
-  /api/v1/incidents` for the snapshot. See `IncidentController` and the
-  `Incident` domain record for the authoritative response shape.
+  /api/v1/incidents` for the snapshot and `GET
+  /api/v1/incidents/{incidentId}` to hydrate each WebSocket notification.
+  See `IncidentController` and the `Incident` domain record for the
+  authoritative response shape.
 - **Realtime gateway** (`services/realtime-gateway`, port 8081): `/ws/incidents`
   for live `INCIDENT_CREATED` and `INCIDENT_STATUS_CHANGED` events.
 
@@ -126,6 +200,14 @@ not otherwise restrict connections by origin.
   design for this milestone.
 - No Docker/Kubernetes packaging yet; that follows once the browser
   integration above has been verified against a real deployment target.
-- The WebSocket dedup/event-id cache is capped at the most recent 1000
-  event IDs (see `incidentsReducer.ts`) - sufficient for a live operator
-  session, not for replaying arbitrary history.
+- The event-ID dedup cache is capped at the most recent 1,000 entries (see
+  `incidentsReducer.ts`) - sufficient for a live operator session, not for
+  replaying arbitrary history.
+- Reconciliation (the fallback refresh used by hydration exhaustion,
+  startup buffer overflow, and reconnection) always re-fetches the entire
+  incident list, not just the affected incident(s) - simple and correct,
+  but heavier than a targeted re-fetch under high event volume.
+- If reconciliation itself is exhausted (backend unreachable for an
+  extended period), the dashboard shows a non-fatal warning until a
+  manual retry or a later automatic trigger succeeds; it does not retry
+  indefinitely on its own.

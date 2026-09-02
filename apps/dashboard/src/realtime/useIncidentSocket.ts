@@ -9,6 +9,11 @@ export type ConnectionState =
   | 'reconnecting'
   | 'disconnected'
 
+export interface SocketOpenInfo {
+  /** True when this connection followed a prior disconnect, false for the first-ever connect. */
+  isReconnect: boolean
+}
+
 const INITIAL_RETRY_DELAY_MS = 1000
 const MAX_RETRY_DELAY_MS = 30_000
 const BACKOFF_FACTOR = 2
@@ -22,6 +27,12 @@ export function computeRetryDelayMs(attempt: number): number {
 export interface UseIncidentSocketOptions {
   /** Overridable for tests; defaults to the browser's global WebSocket. */
   webSocketFactory?: (url: string) => WebSocket
+  /**
+   * Called whenever the socket becomes live, distinguishing the first
+   * connection from a reconnect - orchestration uses this to refresh the
+   * REST snapshot only after a reconnect, not on first connect.
+   */
+  onOpen?: (info: SocketOpenInfo) => void
 }
 
 /**
@@ -40,10 +51,12 @@ export function useIncidentSocket(
     useState<ConnectionState>('connecting')
 
   const onEventRef = useRef(onEvent)
+  const onOpenRef = useRef(options.onOpen)
   const webSocketFactoryRef = useRef(options.webSocketFactory)
 
   useEffect(() => {
     onEventRef.current = onEvent
+    onOpenRef.current = options.onOpen
     webSocketFactoryRef.current = options.webSocketFactory
   })
 
@@ -58,7 +71,8 @@ export function useIncidentSocket(
         return
       }
 
-      setConnectionState(attempt === 0 ? 'connecting' : 'reconnecting')
+      const isReconnectAttempt = attempt > 0
+      setConnectionState(isReconnectAttempt ? 'reconnecting' : 'connecting')
 
       const createSocket = webSocketFactoryRef.current ?? ((target: string) => new WebSocket(target))
       socket = createSocket(url)
@@ -72,6 +86,7 @@ export function useIncidentSocket(
         }
         attempt = 0
         setConnectionState('live')
+        onOpenRef.current?.({ isReconnect: isReconnectAttempt })
       })
 
       socket.addEventListener('message', (messageEvent: MessageEvent) => {

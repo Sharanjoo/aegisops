@@ -183,6 +183,49 @@ describe('useIncidentSocket', () => {
     expect(FakeWebSocket.instances).toHaveLength(2)
   })
 
+  it('reports isReconnect: false on the first connection', () => {
+    const onOpen = vi.fn()
+    renderHook(() =>
+      useIncidentSocket('ws://localhost:8081/ws/incidents', vi.fn(), {
+        webSocketFactory: factory,
+        onOpen,
+      }),
+    )
+
+    act(() => {
+      FakeWebSocket.latest().dispatch('open')
+    })
+
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(onOpen).toHaveBeenCalledWith({ isReconnect: false })
+  })
+
+  it('reports isReconnect: true after a disconnect and reconnect', () => {
+    const onOpen = vi.fn()
+    renderHook(() =>
+      useIncidentSocket('ws://localhost:8081/ws/incidents', vi.fn(), {
+        webSocketFactory: factory,
+        onOpen,
+      }),
+    )
+
+    act(() => {
+      FakeWebSocket.latest().dispatch('open')
+    })
+    act(() => {
+      FakeWebSocket.latest().close()
+    })
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    act(() => {
+      FakeWebSocket.latest().dispatch('open')
+    })
+
+    expect(onOpen).toHaveBeenNthCalledWith(1, { isReconnect: false })
+    expect(onOpen).toHaveBeenNthCalledWith(2, { isReconnect: true })
+  })
+
   it('closes the socket and stops retry timers on unmount', () => {
     const { unmount } = renderHook(() =>
       useIncidentSocket('ws://localhost:8081/ws/incidents', vi.fn(), {

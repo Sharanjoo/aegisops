@@ -22,17 +22,19 @@ export const INCIDENT_STATUSES = [
 export type IncidentStatus = (typeof INCIDENT_STATUSES)[number]
 
 /**
- * Shape returned by GET /api/v1/incidents on the incident service, matching
- * io.aegisops.incident.domain.Incident. `title` and `description` are typed
- * as nullable strings so incidents synthesized purely from a WebSocket event
- * (which does not carry those fields) fit the same shape - see
- * reconcileIncidentEvent in state/incidentsReducer.ts.
+ * Shape returned by GET /api/v1/incidents and GET /api/v1/incidents/{id} on
+ * the incident service, matching io.aegisops.incident.domain.Incident.
+ * `description` can be an empty string (the service coalesces a missing
+ * description to "" before persisting - see IncidentApplicationService)
+ * but is never null; the dashboard only ever displays this REST
+ * representation, never a value synthesized from a WebSocket event - see
+ * state/useIncidentDashboard.ts.
  */
 export interface Incident {
   id: string
   serviceName: string
-  title: string | null
-  description: string | null
+  title: string
+  description: string
   severity: IncidentSeverity
   status: IncidentStatus
   createdAt: string

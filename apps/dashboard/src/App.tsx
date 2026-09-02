@@ -6,6 +6,7 @@ import { FiltersBar } from './components/FiltersBar'
 import { Header } from './components/Header'
 import { IncidentTable } from './components/IncidentTable'
 import { LoadingState } from './components/LoadingState'
+import { ReconciliationBanner } from './components/ReconciliationBanner'
 import { SummaryCards } from './components/SummaryCards'
 import { WebSocketBanner } from './components/WebSocketBanner'
 import { loadEnv } from './config/env'
@@ -19,8 +20,14 @@ import { useIncidentDashboard } from './state/useIncidentDashboard'
 const env = loadEnv()
 
 function App() {
-  const { snapshotStatus, snapshotError, incidents, connectionState } =
-    useIncidentDashboard(env.incidentApiBaseUrl, env.realtimeWsUrl)
+  const {
+    snapshotStatus,
+    snapshotError,
+    incidents,
+    connectionState,
+    reconciliationError,
+    retryReconciliation,
+  } = useIncidentDashboard(env.incidentApiBaseUrl, env.realtimeWsUrl)
 
   const [filters, setFilters] = useState<IncidentFilters>(
     DEFAULT_INCIDENT_FILTERS,
@@ -44,6 +51,11 @@ function App() {
         <SummaryCards incidents={incidents} />
 
         <WebSocketBanner state={connectionState} />
+
+        <ReconciliationBanner
+          error={reconciliationError}
+          onRetry={retryReconciliation}
+        />
 
         <FiltersBar filters={filters} onChange={setFilters} />
 
