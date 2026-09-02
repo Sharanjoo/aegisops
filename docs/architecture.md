@@ -35,7 +35,7 @@ flowchart TD
 
 | Component | Technology | Responsibility | Port |
 |---|---|---|---:|
-| Dashboard | React and TypeScript | Incident visualization and operator controls | 5173 |
+| Dashboard | React and TypeScript | Incident visualization; operator controls are a future milestone | 5173 |
 | Incident service | Java and Spring Boot | Incident lifecycle, REST API and persistence | 8080 |
 | Realtime gateway | Node.js and WebSockets | Push event updates to connected dashboards | 8081 |
 | Detection service | Python and FastAPI | Analyze metrics and publish anomalies | 8000 |
@@ -82,6 +82,24 @@ The realtime gateway exposes:
 
 - `/ws/incidents` for incident lifecycle updates.
 - `/health` for service health checks.
+
+## Dashboard
+
+The dashboard (`apps/dashboard`) loads its initial incident list from the
+
+REST API above, then applies `INCIDENT_CREATED` and
+
+`INCIDENT_STATUS_CHANGED` events from the realtime gateway's WebSocket to
+
+keep that list current, deduplicating by `eventId`. It does not treat the
+
+WebSocket as storage: the REST snapshot is the only source of history, and
+
+a dropped connection is retried with capped exponential backoff rather
+
+than replayed. See `apps/dashboard/README.md` for the full data flow,
+
+environment variables and local startup steps.
 
 ## Data Ownership
 
