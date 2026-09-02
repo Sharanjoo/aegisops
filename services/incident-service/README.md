@@ -216,6 +216,22 @@ The service runs at `http://localhost:8080`.
 
 | `AEGISOPS_OUTBOX_PUBLISH_INTERVAL_MS` | `1000` | Publisher interval |
 
+| `AEGISOPS_CORS_ALLOWED_ORIGIN` | `http://localhost:5173` | Browser origin allowed to call `/api/v1/**` |
+
+## CORS
+
+The service allows cross-origin requests to `/api/v1/**` from exactly one
+
+configured origin (`AEGISOPS_CORS_ALLOWED_ORIGIN`), defaulting to the local
+
+Vite dashboard dev server. This is a local-development convenience, not a
+
+production policy: a real deployment must set the environment variable to
+
+the dashboard's actual origin rather than relying on the default, and there
+
+is no wildcard (`*`) origin support.
+
 ## Run Tests
 
 Docker must be running. Integration tests automatically start isolated MySQL
