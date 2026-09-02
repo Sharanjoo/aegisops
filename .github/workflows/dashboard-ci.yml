@@ -1,0 +1,60 @@
+name: Dashboard CI
+
+on:
+  pull_request:
+    paths:
+      - "apps/dashboard/**"
+      - ".github/workflows/dashboard-ci.yml"
+
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/dashboard/**"
+      - ".github/workflows/dashboard-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dashboard-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: TypeScript Lint, Tests and Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: apps/dashboard
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: apps/dashboard/.nvmrc
+          cache: npm
+          cache-dependency-path: apps/dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run type checking
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build application
+        run: npm run build
