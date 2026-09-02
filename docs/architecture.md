@@ -50,7 +50,7 @@ flowchart TD
 | Topic | Producer | Consumers | Purpose |
 |---|---|---|---|
 | `aegisops.anomaly.detected.v1` | Detection service | Incident service | Report detected failures |
-| `aegisops.incident.lifecycle.v1` | Incident service | Realtime gateway | Publish incident changes |
+| `aegisops.incident.events.v1` | Incident service | Realtime gateway | Publish incident changes |
 | `aegisops.remediation.requested.v1` | Incident service | Remediation engine | Request approved recovery |
 | `aegisops.remediation.completed.v1` | Remediation engine | Incident service | Report remediation results |
 

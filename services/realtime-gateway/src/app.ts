@@ -1,0 +1,80 @@
+import websocket from "@fastify/websocket";
+import Fastify, { type FastifyInstance } from "fastify";
+
+import type { AppConfig } from "./config.js";
+import { ConnectionHub } from "./websocket/connection-hub.js";
+
+export interface BuildAppOptions {
+  logger?: boolean;
+  connectionHub?: ConnectionHub;
+}
+
+export async function buildApp(
+  config: AppConfig,
+  options: BuildAppOptions = {}
+): Promise<FastifyInstance> {
+  const app =
+    options.logger === false
+      ? Fastify({ logger: false })
+      : Fastify({
+          logger: {
+            level: config.logLevel
+          }
+        });
+
+  const connectionHub =
+    options.connectionHub ?? new ConnectionHub();
+
+  await app.register(websocket, {
+    options: {
+      maxPayload: 1_048_576,
+      perMessageDeflate: false
+    }
+  });
+
+  app.get("/health", async () => {
+    return {
+      status: "UP",
+      service: "realtime-gateway"
+    };
+  });
+
+  app.get(
+    "/ws/incidents",
+    {
+      websocket: true
+    },
+    (socket, request) => {
+      connectionHub.add(socket);
+
+      app.log.info(
+        {
+          clientCount: connectionHub.size,
+          remoteAddress: request.ip
+        },
+        "WebSocket client connected"
+      );
+
+      socket.once("close", () => {
+        app.log.info(
+          {
+            clientCount: connectionHub.size
+          },
+          "WebSocket client disconnected"
+        );
+      });
+
+      socket.once("error", (error) => {
+        app.log.warn(
+          {
+            error,
+            clientCount: connectionHub.size
+          },
+          "WebSocket client error"
+        );
+      });
+    }
+  );
+
+  return app;
+}
