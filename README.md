@@ -2,8 +2,8 @@
 
 Event-driven, self-healing operations platform for Kubernetes
 microservices. AegisOps detects failing Kubernetes workloads, turns them
-into tracked incidents, and streams those incidents to consumers in real
-time over Kafka and WebSockets.
+into tracked incidents, and streams those incidents to a live dashboard in
+real time over Kafka and WebSockets.
 
 This repository is a portfolio project under active development. See
 **Implementation Status** below for exactly what runs today versus what is
@@ -16,9 +16,12 @@ still on the roadmap — planned components are never described as working.
 | Cluster agent (Go) — CrashLoopBackOff detection | Complete |
 | Incident service (Java/Spring Boot) — REST API, MySQL, outbox | Complete |
 | Realtime gateway (Node.js) — Kafka to WebSocket bridge | Complete |
-| React dashboard | Planned (next) |
+| React dashboard | Complete (read-only foundation) |
 | Remediation engine, detection service, Prometheus, Grafana | Planned |
 | Helm, Terraform/AWS deployment | Planned |
+
+The dashboard is read-only: no authentication and no incident mutation
+controls (acknowledge/resolve) yet — see the Roadmap section below.
 
 Full detail, including the current REST API, event schema, and database
 tables, is in [`docs/architecture.md`](docs/architecture.md).
@@ -33,10 +36,14 @@ Kubernetes workload failure
                 -> Kafka topic aegisops.incident.events.v1
                     -> Node.js realtime gateway
                         -> WebSocket clients
+                            -> React dashboard (apps/dashboard)
 ```
 
-There is no consumer of the WebSocket stream yet — the React dashboard is
-the next component to be built.
+The dashboard also calls the incident service's REST API directly once,
+on page load, for its initial snapshot; the diagram above shows the
+event-sourced path only. See
+[`docs/architecture.md`](docs/architecture.md#current-dashboard-behavior)
+for the full reconciliation model.
 
 ## Implemented Components and Technologies
 
@@ -45,6 +52,7 @@ the next component to be built.
 | [Cluster agent](services/cluster-agent) | Go 1.27, client-go, Kubernetes informers | n/a (in-cluster watcher) |
 | [Incident service](services/incident-service) | Java 21, Spring Boot 4, Spring Data JPA, Flyway, Kafka, Testcontainers | 8080 |
 | [Realtime gateway](services/realtime-gateway) | Node.js 22, TypeScript, Fastify, WebSockets, KafkaJS, Zod | 8081 |
+| [Dashboard](apps/dashboard) | React 19, TypeScript, Vite, Vitest | 5173 |
 | Database | MySQL 8.4 | 3306 (3307 locally) |
 | Event broker | Apache Kafka | 9092 |
 
@@ -57,18 +65,20 @@ aegisops/
 ├── infrastructure/
 │   ├── kind/                  # Local Kubernetes cluster config
 │   └── local/                 # Docker Compose for MySQL + Kafka
+├── apps/
+│   └── dashboard/             # React: read-only incident dashboard
 ├── services/
 │   ├── cluster-agent/         # Go: Kubernetes failure detection
 │   ├── incident-service/      # Java/Spring Boot: incident REST API
 │   └── realtime-gateway/      # Node.js: Kafka-to-WebSocket bridge
-└── .github/workflows/         # Per-service CI
+└── .github/workflows/         # Per-service/app CI
 ```
 
 ## Prerequisites
 
 - Docker Desktop (MySQL, Kafka, and integration test containers)
 - Java 21 and Maven (or use the included `mvnw` wrapper)
-- Node.js 22 (see each Node service's `.nvmrc`)
+- Node.js 22 (see each Node project's `.nvmrc`)
 - Go 1.27
 - kubectl and [kind](https://kind.sigs.k8s.io/) for the cluster agent's
   local Kubernetes deployment
@@ -99,7 +109,15 @@ docker compose -f .\infrastructure\local\compose.yaml ps
    npm run dev
    ```
    Runs at `http://localhost:8081`.
-4. **Cluster agent** (needs the incident service; optional for local
+4. **Dashboard** (needs the incident service and realtime gateway):
+   ```powershell
+   cd .\apps\dashboard
+   npm install
+   Copy-Item .env.example .env
+   npm run dev
+   ```
+   Runs at `http://localhost:5173`.
+5. **Cluster agent** (needs the incident service; optional for local
    development unless testing live Kubernetes detection):
    ```powershell
    cd .\services\cluster-agent
@@ -119,6 +137,7 @@ docker compose -f .\infrastructure\local\compose.yaml ps
 | Incident service | `GET /actuator/health` | Health check |
 | Realtime gateway | `GET /ws/incidents` (WebSocket) | Live incident event stream |
 | Realtime gateway | `GET /health` | Health check |
+| Dashboard | `http://localhost:5173` | Read-only operator UI |
 
 ## Kafka Topic and Event Types
 
@@ -130,7 +149,7 @@ Each event is flat and contains `eventId`, `eventType`, `eventVersion`,
 `occurredAt`, `incidentId`, `serviceName`, `severity`, `status`, and
 `previousStatus` — see
 [`docs/architecture.md`](docs/architecture.md#current-event-contract) for
-the full contract and the intended dashboard reconciliation model.
+the full contract and the dashboard's actual reconciliation model.
 
 ## Tests
 
@@ -159,17 +178,32 @@ npm run typecheck
 npm test
 ```
 
+**Dashboard**:
+
+```powershell
+cd .\apps\dashboard
+npm install
+npm run lint
+npm run typecheck
+npm test
+```
+
 ## Reliability and Security Decisions (Implemented)
 
 - **Transactional outbox**: an incident and its outbound event commit in
   the same MySQL transaction, so the two can never disagree.
 - **At-least-once Kafka delivery**: a scheduled publisher retries any event
-  still marked `PENDING`; consumers must deduplicate using `eventId`.
+  still marked `PENDING`; consumers must deduplicate using `eventId` (the
+  dashboard does this with a capped 1,000-entry cache).
 - **Ordered delivery per incident**: the incident ID is the Kafka message
   key.
 - **Schema validation at the consumer boundary**: the realtime gateway
   validates every Kafka message against the version-1 event schema with
-  Zod and drops anything invalid instead of crashing or forwarding it.
+  Zod and drops anything invalid instead of crashing or forwarding it; the
+  dashboard independently re-validates every WebSocket message it receives.
+- **Single-origin CORS**: the incident service accepts cross-origin REST
+  calls from exactly one configured origin
+  (`AEGISOPS_CORS_ALLOWED_ORIGIN`), not a wildcard.
 - **Least-privilege Kubernetes RBAC**: the cluster agent can only `get`,
   `list`, and `watch` Pods — it cannot delete, patch, or scale anything.
 - **Non-root, read-only containers**: the cluster agent runs as a
@@ -182,14 +216,14 @@ npm test
 
 ## Roadmap (Planned, Not Implemented)
 
-- React dashboard, reconciling a REST snapshot with WebSocket updates.
+- Incident mutation controls (acknowledge/resolve) from the dashboard, and
+  authentication in front of it.
 - Python/FastAPI detection service consuming Prometheus metrics.
 - Go remediation engine with operator-approved, policy-bounded actions.
 - Prometheus metrics collection and Grafana dashboards.
 - Retry topics, dead-letter topics, and distributed tracing.
-- Authentication, CORS, and dashboard-facing security hardening.
-- Docker packaging for the incident service, Helm charts, and
-  Terraform/AWS deployment.
+- Docker packaging for the incident service and dashboard, Helm charts,
+  and Terraform/AWS deployment.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full target
 architecture diagram and implementation order.
@@ -199,6 +233,7 @@ architecture diagram and implementation order.
 - [Cluster agent](services/cluster-agent/README.md)
 - [Incident service](services/incident-service/README.md)
 - [Realtime gateway](services/realtime-gateway/README.md)
+- [Dashboard](apps/dashboard/README.md)
 
 ## License
 

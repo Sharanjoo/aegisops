@@ -16,7 +16,8 @@ tell the two apart at a glance.
 | MySQL persistence | Complete | `incidents` and `incident_outbox_events` tables |
 | Kafka event publishing | Complete | Single topic, two event types |
 | Node.js realtime gateway | Complete | Kafka consumer, WebSocket broadcast |
-| React dashboard | Planned (next) | Not started; see the reconciliation model below |
+| React dashboard | Complete (read-only foundation) | REST snapshot + WebSocket live updates; no auth or mutation controls |
+| Incident-service CORS | Complete | Single configurable allowed origin, for the local dashboard dev server |
 | Acknowledge / resolve endpoints | Planned | Status changes currently go through one generic `PATCH` |
 | Remediation request endpoint | Planned | No remediation engine exists yet |
 | Services endpoint | Planned | No `services` table exists yet |
@@ -43,11 +44,13 @@ Kubernetes workload failure
                 -> Kafka topic aegisops.incident.events.v1
                     -> Node.js realtime gateway
                         -> WebSocket clients
+                            -> React dashboard (apps/dashboard)
 ```
 
-The React dashboard is the next planned component and is **not yet
-implemented**. There is currently no consumer of the realtime gateway's
-WebSocket stream.
+The dashboard also calls the incident service's REST API directly for its
+initial snapshot — the diagram above shows the event-sourced path, but
+`GET /api/v1/incidents` on page load is a separate, direct call. See
+**Current Dashboard Behavior** below.
 
 ### Current Components
 
@@ -56,6 +59,7 @@ WebSocket stream.
 | Cluster agent | Go | Detects `CrashLoopBackOff` and reports incidents | n/a (in-cluster watcher) |
 | Incident service | Java 21, Spring Boot 4 | Incident lifecycle, REST API, persistence, event publishing | 8080 |
 | Realtime gateway | Node.js 22, Fastify, WebSockets | Consumes Kafka, broadcasts to WebSocket clients | 8081 |
+| Dashboard | React 19, TypeScript, Vite | Read-only incident visualization | 5173 |
 | Database | MySQL 8.4 | Incident and outbox storage | 3306 (mapped to 3307 locally) |
 | Event broker | Apache Kafka | Incident event transport | 9092 |
 
@@ -71,6 +75,10 @@ Owned by the incident service (see
 | `GET` | `/api/v1/incidents/{incidentId}` | Retrieve an incident |
 | `PATCH` | `/api/v1/incidents/{incidentId}/status` | Update incident status |
 | `GET` | `/actuator/health` | Service health check |
+
+Cross-origin browser requests to `/api/v1/**` are allowed only from the
+single origin configured by `AEGISOPS_CORS_ALLOWED_ORIGIN` (defaults to
+`http://localhost:5173`, the local dashboard dev server) — not a wildcard.
 
 The realtime gateway exposes:
 
@@ -118,7 +126,7 @@ The current schema (version `1`) is flat. Every event contains exactly:
 
 There is no `correlationId`, no `source`, and no nested `payload` in the
 current schema. The event does **not** carry `title`, `description`,
-`createdAt`, or `updatedAt` — see the dashboard reconciliation model below.
+`createdAt`, or `updatedAt` — see **Current Dashboard Behavior** below.
 
 ### Current Persistence
 
@@ -144,7 +152,9 @@ tables exist today:
 - The realtime gateway validates every incoming Kafka message against the
   version-1 schema and silently drops anything invalid.
 - Because delivery is at-least-once, any consumer of the event stream must
-  deduplicate using `eventId`.
+  deduplicate using `eventId` — the dashboard does this (see below).
+- The incident service accepts cross-origin REST calls from exactly one
+  configured origin (`AEGISOPS_CORS_ALLOWED_ORIGIN`), not a wildcard.
 - Health endpoints exist for the incident service (`/actuator/health`) and
   the realtime gateway (`/health`). The cluster agent has no HTTP endpoint;
   it is a background watcher.
@@ -157,22 +167,33 @@ tables exist today:
 - Remediation approval policies, bounded retries, and timeouts.
 - Immutable audit records for remediation attempts.
 
-### Dashboard Reconciliation Model (Intended)
+### Current Dashboard Behavior
 
-The current event schema is intentionally compact and does not carry the
-full incident record. Once the dashboard exists, it is expected to
-reconcile state as follows:
+`apps/dashboard` (React, TypeScript, Vite) is implemented as a read-only
+foundation milestone: no authentication and no incident mutation controls
+(acknowledge/resolve) yet. It reconciles state as follows:
 
-1. Load the initial incident snapshot from `GET /api/v1/incidents`.
-2. Receive compact incident notifications over WebSocket.
-3. Deduplicate using `eventId`.
-4. Retrieve the complete incident using
-   `GET /api/v1/incidents/{incidentId}`.
-5. Upsert the complete REST representation into dashboard state.
+1. Load the initial incident snapshot from `GET /api/v1/incidents` once,
+   on page load.
+2. Receive `INCIDENT_CREATED` and `INCIDENT_STATUS_CHANGED` events over
+   `/ws/incidents`.
+3. Deduplicate incoming events using `eventId` (a capped 1,000-entry
+   cache).
+4. Apply `INCIDENT_CREATED` by inserting or upserting the incident
+   directly from the event payload — **not** by re-fetching the full
+   incident via `GET /api/v1/incidents/{incidentId}`. Because the event
+   carries no `title` or `description`, an incident seen only through the
+   socket displays "Details pending…" for those fields until a future
+   snapshot reload supplies them.
+5. Apply `INCIDENT_STATUS_CHANGED` by updating a matching incident already
+   in state; an unknown incident ID is ignored rather than synthesized.
+6. Reconnect automatically on disconnect with capped exponential backoff
+   (1s, 2s, 4s, ... capped at 30s), surfacing connection state as
+   connecting / live / reconnecting / disconnected.
 
-This round-trip is necessary because the current event does not contain
-`title`, `description`, `createdAt`, or `updatedAt` — only the REST
-representation does.
+See `apps/dashboard/README.md` for the full implementation notes,
+including why step 4 does not round-trip through
+`GET /api/v1/incidents/{incidentId}` per event.
 
 ---
 
@@ -213,7 +234,7 @@ flowchart TD
 
 | Component | Technology | Responsibility | Port |
 |---|---|---|---:|
-| Dashboard | React and TypeScript | Incident visualization and operator controls | 5173 |
+| Dashboard | React and TypeScript | Incident visualization; operator controls are a future milestone | 5173 |
 | Incident service | Java and Spring Boot | Incident lifecycle, REST API and persistence | 8080 |
 | Realtime gateway | Node.js and WebSockets | Push event updates to connected dashboards | 8081 |
 | Detection service | Python and FastAPI | Analyze metrics and publish anomalies | 8000 |
@@ -263,16 +284,18 @@ Mostly concerned with the not-yet-built remediation engine:
 - Every remediation attempt creates an immutable audit record.
 - Destructive actions require an explicit allow-listed policy.
 
-One guardrail already applies today, independent of remediation: secrets
+Two guardrails already apply today, independent of remediation: secrets
 never enter source control (verified for this repository — see
-`.gitignore`).
+`.gitignore`), and the incident service's CORS policy is a single
+configurable origin rather than a wildcard (see **Current REST API**
+above).
 
 ### Implementation Order
 
 1. Incident service and MySQL — **done**
 2. Kafka event contracts and Redpanda — **done** (single topic)
-3. Realtime gateway and dashboard — realtime gateway **done**, dashboard
-   **planned next**
+3. Realtime gateway and dashboard — **done** (dashboard is a read-only
+   foundation milestone; operator controls are still planned)
 4. Remediation engine and Kubernetes integration — planned
 5. Detection service and Prometheus — planned
 6. Observability and distributed tracing — planned
