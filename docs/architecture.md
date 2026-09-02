@@ -43,14 +43,16 @@ Kubernetes workload failure
             -> MySQL incidents and transactional outbox
                 -> Kafka topic aegisops.incident.events.v1
                     -> Node.js realtime gateway
-                        -> WebSocket clients
-                            -> React dashboard (apps/dashboard)
+                        -> WebSocket clients (compact change notification)
+                            -> GET /api/v1/incidents/{incidentId}
+                                -> React dashboard (apps/dashboard)
 ```
 
-The dashboard also calls the incident service's REST API directly for its
-initial snapshot — the diagram above shows the event-sourced path, but
-`GET /api/v1/incidents` on page load is a separate, direct call. See
-**Current Dashboard Behavior** below.
+The WebSocket notification only ever triggers a REST fetch of the complete
+incident - it never supplies displayable fields itself. The dashboard also
+calls the incident service's REST API directly for its initial snapshot
+(`GET /api/v1/incidents` on page load) and again after any WebSocket
+reconnection. See **Current Dashboard Behavior** below.
 
 ### Current Components
 
@@ -171,29 +173,62 @@ tables exist today:
 
 `apps/dashboard` (React, TypeScript, Vite) is implemented as a read-only
 foundation milestone: no authentication and no incident mutation controls
-(acknowledge/resolve) yet. It reconciles state as follows:
+(acknowledge/resolve) yet. REST supplies every complete incident
+representation; the WebSocket supplies only compact **change
+notifications** that trigger a REST fetch - the dashboard does not assume
+exactly-once delivery of anything, and instead continuously reconciles
+toward the incident service as the source of truth.
 
-1. Load the initial incident snapshot from `GET /api/v1/incidents` once,
-   on page load.
-2. Receive `INCIDENT_CREATED` and `INCIDENT_STATUS_CHANGED` events over
-   `/ws/incidents`.
-3. Deduplicate incoming events using `eventId` (a capped 1,000-entry
-   cache).
-4. Apply `INCIDENT_CREATED` by inserting or upserting the incident
-   directly from the event payload — **not** by re-fetching the full
-   incident via `GET /api/v1/incidents/{incidentId}`. Because the event
-   carries no `title` or `description`, an incident seen only through the
-   socket displays "Details pending…" for those fields until a future
-   snapshot reload supplies them.
-5. Apply `INCIDENT_STATUS_CHANGED` by updating a matching incident already
-   in state; an unknown incident ID is ignored rather than synthesized.
-6. Reconnect automatically on disconnect with capped exponential backoff
-   (1s, 2s, 4s, ... capped at 30s), surfacing connection state as
-   connecting / live / reconnecting / disconnected.
+**Normal path:**
 
-See `apps/dashboard/README.md` for the full implementation notes,
-including why step 4 does not round-trip through
-`GET /api/v1/incidents/{incidentId}` per event.
+1. Load the initial incident snapshot from `GET /api/v1/incidents` on page
+   load. WebSocket notifications that arrive before this succeeds are
+   buffered (bounded to 500 entries, deduplicated by `eventId`) and
+   replayed afterward, rather than processed immediately or dropped.
+2. For every valid, not-yet-processed `INCIDENT_CREATED` or
+   `INCIDENT_STATUS_CHANGED` notification, fetch the complete incident via
+   `GET /api/v1/incidents/{incidentId}` and upsert that REST response into
+   state - for both event types, and regardless of whether the incident
+   was already present. Nothing from the notification's own fields
+   (`serviceName`, `severity`, `status`, ...) is ever written into
+   dashboard state directly.
+3. A notification is marked processed (added to a capped 1,000-entry
+   `eventId` cache) only once its incident has actually been hydrated and
+   applied - never before, and never for one whose hydration failed.
+4. A failed detail fetch retries up to 3 times with capped backoff. A
+   duplicate or redelivered notification for an `eventId` already
+   processed, or still being hydrated, is ignored; at most one detail
+   fetch is in flight per `eventId`.
+
+**Fallback path - reconciliation:** one coalesced, bounded-retry mechanism
+recovers state whenever the normal path alone cannot be trusted to:
+
+- a detail hydration exhausts its 3 retries,
+- the startup buffer overflows its cap, or
+- the WebSocket reconnects after a disconnection (not the first
+  connection).
+
+Any of these re-fetches `GET /api/v1/incidents` and merges it into state
+incident-by-incident. Concurrent triggers - for example a reconnect and a
+hydration failure happening together - share one in-flight refresh rather
+than each starting a separate request. The refresh itself retries up to 3
+times with capped backoff; if every attempt fails, a non-fatal warning
+appears in the dashboard with a manual retry action, and a later
+successful refresh (automatic or manual) clears it. A single failed live
+update, or one exhausted refresh cycle, never blanks the already-loaded
+dashboard.
+
+**Timestamp safety:** every incident written into state (via hydration or
+a reconciliation merge) has its `updatedAt` compared against whatever is
+already there. A strictly newer value replaces it, a strictly older value
+is discarded, and an **equal** value also retains the existing one -
+network arrival order never decides the winner.
+
+Connection state is surfaced as connecting / live / reconnecting /
+disconnected, with capped exponential reconnect backoff (1s, 2s, 4s, ...
+capped at 30s).
+
+See `apps/dashboard/README.md` for the full implementation notes.
 
 ---
 

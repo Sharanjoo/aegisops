@@ -35,13 +35,7 @@ export function IncidentTable({ incidents }: IncidentTableProps) {
           {incidents.map((incident) => (
             <tr key={incident.id}>
               <th scope="row">{incident.serviceName}</th>
-              <td>
-                {incident.title ?? (
-                  <span className="incident-title-pending">
-                    Details pending…
-                  </span>
-                )}
-              </td>
+              <td>{incident.title}</td>
               <td>
                 <SeverityBadge severity={incident.severity} />
               </td>

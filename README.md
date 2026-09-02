@@ -35,13 +35,15 @@ Kubernetes workload failure
             -> MySQL incidents and transactional outbox
                 -> Kafka topic aegisops.incident.events.v1
                     -> Node.js realtime gateway
-                        -> WebSocket clients
-                            -> React dashboard (apps/dashboard)
+                        -> WebSocket clients (compact change notification)
+                            -> GET /api/v1/incidents/{incidentId}
+                                -> React dashboard (apps/dashboard)
 ```
 
-The dashboard also calls the incident service's REST API directly once,
-on page load, for its initial snapshot; the diagram above shows the
-event-sourced path only. See
+The WebSocket notification only ever triggers a REST fetch of the complete
+incident - it never supplies displayable fields itself. The dashboard also
+calls the incident service's REST API directly once on page load for its
+initial snapshot, and again after any WebSocket reconnection. See
 [`docs/architecture.md`](docs/architecture.md#current-dashboard-behavior)
 for the full reconciliation model.
 

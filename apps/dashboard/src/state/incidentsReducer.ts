@@ -1,10 +1,4 @@
-import { coerceEnum } from './coerceEnum'
-import {
-  INCIDENT_SEVERITIES,
-  INCIDENT_STATUSES,
-  type Incident,
-  type IncidentRealtimeEvent,
-} from '../types/incident'
+import type { Incident } from '../types/incident'
 
 const MAX_PROCESSED_EVENT_IDS = 1000
 
@@ -21,8 +15,12 @@ export const initialIncidentsState: IncidentsState = {
 }
 
 export type IncidentsAction =
+  /** Initial page-load snapshot: establishes state before the socket starts. */
   | { type: 'SNAPSHOT_LOADED'; incidents: Incident[] }
-  | { type: 'REALTIME_EVENT'; event: IncidentRealtimeEvent }
+  /** Reconnection-recovery snapshot: merges safely with events arriving concurrently. */
+  | { type: 'SNAPSHOT_MERGED'; incidents: Incident[] }
+  /** A WebSocket event's incident has been fetched in full via REST and is ready to apply. */
+  | { type: 'INCIDENT_HYDRATED'; eventId: string; incident: Incident }
 
 interface EventBookkeeping {
   processedEventIds: readonly string[]
@@ -49,73 +47,55 @@ function rememberEventId(
   return { processedEventIds, processedEventIdSet }
 }
 
-function applyIncidentCreated(
+/**
+ * True when `incoming` is strictly newer than `existing` and therefore safe
+ * to apply. A missing `existing` is always safe (there is nothing to
+ * regress). Equal timestamps retain the existing incident rather than
+ * letting arrival order decide the winner - applied consistently for
+ * hydrated incidents, snapshot merges, and reconciliation refreshes, since
+ * all three route through this same helper.
+ */
+function isSafeToApply(
+  incoming: Incident,
+  existing: Incident | undefined,
+): boolean {
+  if (!existing) {
+    return true
+  }
+
+  const incomingTime = Date.parse(incoming.updatedAt)
+  const existingTime = Date.parse(existing.updatedAt)
+
+  if (Number.isNaN(incomingTime) || Number.isNaN(existingTime)) {
+    return true
+  }
+
+  return incomingTime > existingTime
+}
+
+/**
+ * Upserts one incident, guarded against a slower/older REST response
+ * regressing an incident a more recent hydration or merge already applied.
+ */
+function upsertIncident(
   byId: Record<string, Incident>,
-  event: IncidentRealtimeEvent,
+  incident: Incident,
 ): Record<string, Incident> {
-  const existing = byId[event.incidentId]
-
-  const incident: Incident = existing
-    ? {
-        ...existing,
-        serviceName: event.serviceName,
-        severity: coerceEnum(
-          INCIDENT_SEVERITIES,
-          event.severity,
-          existing.severity,
-        ),
-        status: coerceEnum(INCIDENT_STATUSES, event.status, existing.status),
-        updatedAt: event.occurredAt,
-      }
-    : {
-        id: event.incidentId,
-        serviceName: event.serviceName,
-        // The WebSocket payload does not carry title/description - only
-        // the REST snapshot does. Left null until/unless the REST snapshot
-        // (re)supplies them.
-        title: null,
-        description: null,
-        severity: coerceEnum(INCIDENT_SEVERITIES, event.severity, 'MEDIUM'),
-        status: coerceEnum(INCIDENT_STATUSES, event.status, 'OPEN'),
-        createdAt: event.occurredAt,
-        updatedAt: event.occurredAt,
-      }
-
+  if (!isSafeToApply(incident, byId[incident.id])) {
+    return byId
+  }
   return { ...byId, [incident.id]: incident }
 }
 
-function applyIncidentEvent(
+function mergeIncidents(
   byId: Record<string, Incident>,
-  event: IncidentRealtimeEvent,
+  incidents: Incident[],
 ): Record<string, Incident> {
-  switch (event.eventType) {
-    case 'INCIDENT_CREATED':
-      return applyIncidentCreated(byId, event)
-    case 'INCIDENT_STATUS_CHANGED':
-      return applyIncidentStatusChanged(byId, event)
+  let next = byId
+  for (const incident of incidents) {
+    next = upsertIncident(next, incident)
   }
-}
-
-function applyIncidentStatusChanged(
-  byId: Record<string, Incident>,
-  event: IncidentRealtimeEvent,
-): Record<string, Incident> {
-  const existing = byId[event.incidentId]
-
-  // Per spec this event updates a known incident; an unknown incident ID
-  // (e.g. the REST snapshot has not loaded yet) is ignored rather than
-  // synthesized, since a status-changed event has no title/severity origin.
-  if (!existing) {
-    return byId
-  }
-
-  const updated: Incident = {
-    ...existing,
-    status: coerceEnum(INCIDENT_STATUSES, event.status, existing.status),
-    updatedAt: event.occurredAt,
-  }
-
-  return { ...byId, [updated.id]: updated }
+  return next
 }
 
 export function incidentsReducer(
@@ -131,18 +111,23 @@ export function incidentsReducer(
       return { ...state, byId }
     }
 
-    case 'REALTIME_EVENT': {
-      const { event } = action
+    case 'SNAPSHOT_MERGED': {
+      return { ...state, byId: mergeIncidents(state.byId, action.incidents) }
+    }
 
-      if (state.processedEventIdSet.has(event.eventId)) {
+    case 'INCIDENT_HYDRATED': {
+      // Defense in depth: the orchestration layer already checks this
+      // before dispatching, but two hydrations for the same eventId could
+      // in principle be dispatched before either is processed.
+      if (state.processedEventIdSet.has(action.eventId)) {
         return state
       }
 
-      const bookkeeping = rememberEventId(state, event.eventId)
+      const bookkeeping = rememberEventId(state, action.eventId)
 
       return {
         ...bookkeeping,
-        byId: applyIncidentEvent(state.byId, event),
+        byId: upsertIncident(state.byId, action.incident),
       }
     }
 

@@ -29,7 +29,7 @@ export function filterIncidents(
       return true
     }
 
-    const haystack = [incident.serviceName, incident.title ?? '', incident.id]
+    const haystack = [incident.serviceName, incident.title, incident.id]
       .join(' ')
       .toLowerCase()
 

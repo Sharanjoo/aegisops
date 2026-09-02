@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
 import {
+  clusterAgentDemoIncident,
   incidentCreatedEvent,
   inventoryApiIncident,
   paymentsApiIncident,
@@ -51,14 +52,27 @@ class FakeWebSocket {
   }
 }
 
+function jsonResponse(body: unknown) {
+  return { ok: true, status: 200, statusText: 'OK', json: async () => body }
+}
+
 function stubFetchOk(incidents: unknown[]) {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(incidents)))
+}
+
+/** Routes the list endpoint to `incidents` and any incident-detail request to `detailsById`. */
+function stubFetchWithDetails(
+  incidents: unknown[],
+  detailsById: Record<string, unknown>,
+) {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async () => incidents,
+    vi.fn((url: string) => {
+      if (url.endsWith('/api/v1/incidents')) {
+        return Promise.resolve(jsonResponse(incidents))
+      }
+      const id = url.split('/').pop() ?? ''
+      return Promise.resolve(jsonResponse(detailsById[id]))
     }),
   )
 }
@@ -125,8 +139,11 @@ describe('App', () => {
     ).toBeInTheDocument()
   })
 
-  it('reflects a live INCIDENT_CREATED event without a page reload', async () => {
-    stubFetchOk([paymentsApiIncident])
+  it('reflects a live INCIDENT_CREATED event, hydrated with its complete title, without a page reload', async () => {
+    stubFetchWithDetails(
+      [paymentsApiIncident],
+      { [clusterAgentDemoIncident.id]: clusterAgentDemoIncident },
+    )
     render(<App />)
 
     await screen.findByText(paymentsApiIncident.serviceName)
@@ -139,7 +156,12 @@ describe('App', () => {
       })
     })
 
-    expect(await screen.findByText(event.serviceName)).toBeInTheDocument()
+    // The event itself carries no title - this only appears once the
+    // dashboard has fetched the complete incident via REST.
+    expect(
+      await screen.findByText(clusterAgentDemoIncident.title),
+    ).toBeInTheDocument()
+    expect(screen.getByText(event.serviceName)).toBeInTheDocument()
   })
 
   it('shows the connection state in the header', async () => {
