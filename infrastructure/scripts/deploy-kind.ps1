@@ -220,6 +220,12 @@ foreach ($deployment in @("incident-service", "realtime-gateway", "dashboard", "
     Invoke-Checked "Waiting for deployment/$deployment ..." { kubectl rollout status "deployment/$deployment" -n $Namespace --timeout=300s }
 }
 
+# Dev-only local observability (Prometheus). Never touches MySQL, Kafka,
+# or their PVCs - it only scrapes the application workloads above.
+Write-Host "`n=== Applying observability stage (Prometheus) ==="
+Invoke-Checked "kubectl apply -k 40-observability ..." { kubectl apply -k (Join-Path $overlayRoot "40-observability") }
+Invoke-Checked "Waiting for deployment/prometheus ..." { kubectl rollout status deployment/prometheus -n $Namespace --timeout=180s }
+
 # --- 11. Status summary -------------------------------------------------------
 Write-Host "`n=== AegisOps status in namespace '$Namespace' ==="
 kubectl get pods,services,statefulsets,jobs,pvc -n $Namespace -o wide
@@ -232,6 +238,10 @@ Write-Host ""
 Write-Host "Then, in another shell:"
 Write-Host "  curl http://localhost:8080/health"
 Write-Host "  curl http://localhost:8080/api/v1/incidents"
+Write-Host ""
+Write-Host "Forward Prometheus (see docs/observability.md):"
+Write-Host "  kubectl port-forward -n $Namespace svc/prometheus 9090:9090"
+Write-Host "  Then open http://localhost:9090/targets"
 Write-Host ""
 Write-Host "Tail any workload's logs, e.g.:"
 Write-Host "  kubectl logs -n $Namespace deployment/cluster-agent --since=5m"

@@ -13,6 +13,8 @@ kind: Kustomization
 resources:
   - rbac.yaml
   - deployment.yaml
+  - configmap.yaml
+  - service.yaml
 
 patches:
   - path: patch-incident-service-url.yaml

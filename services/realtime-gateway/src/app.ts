@@ -2,11 +2,13 @@ import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import type { AppConfig } from "./config.js";
+import { createMetrics, type RealtimeMetrics } from "./metrics.js";
 import { ConnectionHub } from "./websocket/connection-hub.js";
 
 export interface BuildAppOptions {
   logger?: boolean;
   connectionHub?: ConnectionHub;
+  metrics?: RealtimeMetrics;
 }
 
 export async function buildApp(
@@ -24,6 +26,7 @@ export async function buildApp(
 
   const connectionHub =
     options.connectionHub ?? new ConnectionHub();
+  const metrics = options.metrics ?? createMetrics();
 
   await app.register(websocket, {
     options: {
@@ -39,6 +42,11 @@ export async function buildApp(
     };
   });
 
+  app.get("/metrics", async (_request, reply) => {
+    reply.header("Content-Type", metrics.registry.contentType);
+    return metrics.registry.metrics();
+  });
+
   app.get(
     "/ws/incidents",
     {
@@ -46,6 +54,7 @@ export async function buildApp(
     },
     (socket, request) => {
       connectionHub.add(socket);
+      metrics.websocketClients.set(connectionHub.size);
 
       app.log.info(
         {
@@ -56,6 +65,8 @@ export async function buildApp(
       );
 
       socket.once("close", () => {
+        metrics.websocketClients.set(connectionHub.size);
+
         app.log.info(
           {
             clientCount: connectionHub.size
@@ -65,6 +76,8 @@ export async function buildApp(
       });
 
       socket.once("error", (error) => {
+        metrics.websocketClients.set(connectionHub.size);
+
         app.log.warn(
           {
             error,

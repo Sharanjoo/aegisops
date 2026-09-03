@@ -55,3 +55,7 @@ crash.*.log
 *.log
 logs/
 tmp/
+
+# E2E test diagnostics (see infrastructure/scripts/e2e-kind.ps1) - only
+# ever written locally or as a CI artifact, never committed.
+.e2e-diagnostics/

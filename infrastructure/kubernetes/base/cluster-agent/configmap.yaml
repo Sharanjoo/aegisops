@@ -1,0 +1,14 @@
+# Non-secret runtime configuration only, matching the pattern used by the
+# other services' ConfigMaps. cluster-agent has no database or Kafka
+# config - just where its observability server binds.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-agent-config
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: cluster-agent
+    app.kubernetes.io/part-of: aegisops
+data:
+  AEGISOPS_METRICS_HOST: "0.0.0.0"
+  AEGISOPS_METRICS_PORT: "9090"

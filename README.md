@@ -19,7 +19,9 @@ still on the roadmap — planned components are never described as working.
 | React dashboard | Complete (read-only foundation) |
 | Container images (incident service, realtime gateway, dashboard, cluster agent) | Complete |
 | Kubernetes manifests (Kustomize, local kind deployment) | Complete |
-| Remediation engine, detection service, Prometheus, Grafana | Planned |
+| Prometheus metrics and local-dev observability | Complete |
+| Automated kind end-to-end test and CI | Complete |
+| Remediation engine, detection service, Grafana | Planned |
 | Helm, Terraform/AWS deployment | Planned |
 
 The dashboard is read-only: no authentication and no incident mutation
@@ -168,11 +170,16 @@ deployment - are documented in **Kubernetes Deployment (kind)** below.
 ## Kubernetes Deployment (kind)
 
 Deploys the full stack - MySQL, Kafka, incident service, realtime gateway,
-dashboard, and cluster agent - into the local kind cluster using
-Kustomize. This is local development infrastructure: single-instance
-MySQL, single-broker Kafka, no ingress controller, no HA. See
+dashboard, cluster agent, and a local Prometheus - into the local kind
+cluster using Kustomize. This is local development infrastructure:
+single-instance MySQL, single-broker Kafka, non-persistent Prometheus, no
+ingress controller, no HA. See
 [`docs/architecture.md`](docs/architecture.md#kubernetes-deployment-kind)
-for the full topology and design rationale.
+for the full topology and design rationale,
+[`docs/runbook.md`](docs/runbook.md) for the complete operational
+reference, [`docs/observability.md`](docs/observability.md) for every
+metric and alert, and [`docs/demo.md`](docs/demo.md) for a guided
+five-minute walkthrough.
 
 ### Prerequisites
 
@@ -193,14 +200,15 @@ infrastructure/kubernetes/
 │   ├── incident-service/          # Deployment + Service + ConfigMap
 │   ├── realtime-gateway/          # Deployment + Service + ConfigMap
 │   ├── dashboard/                 # Deployment + Service + ConfigMap
-│   └── cluster-agent/             # References services/cluster-agent's
-│                                   # RBAC + Deployment, plus one patch
+│   ├── cluster-agent/             # RBAC + Deployment + Service + ConfigMap
+│   └── prometheus/                 # Deployment + Service + scrape/alert ConfigMap
 └── overlays/kind-local/         # Staged Kustomizations, applied in order
     ├── 00-namespace/
     ├── 10-infrastructure/         # MySQL + Kafka
     ├── 20-kafka-topic-init/
     ├── 30-application/            # incident-service, realtime-gateway,
     │                               # dashboard, cluster-agent
+    ├── 40-observability/           # Prometheus
     └── .env.example                # Tracked placeholders for the local Secret
 ```
 
@@ -235,8 +243,10 @@ Idempotent and safe to re-run: builds all four `:dev` images, loads them
 into the kind cluster, applies the namespace and Secret, applies MySQL and
 Kafka and waits for both to become ready, provisions the
 `aegisops.incident.events.v1` topic, applies the four application
-workloads, and waits for every rollout. Pass `-SkipBuild` to redeploy
-already-built images without rebuilding.
+workloads (explicitly restarting them so a rebuilt image under the same
+`:dev` tag actually gets picked up), applies Prometheus, and waits for
+every rollout. Pass `-SkipBuild` to redeploy already-built images without
+rebuilding.
 
 ### Verify
 
@@ -244,25 +254,51 @@ already-built images without rebuilding.
 pwsh infrastructure/scripts/verify-kind.ps1
 ```
 
-Read-only: prints workload/Service/StatefulSet/PVC/Job status and checks
+Read-only: prints workload/Service/StatefulSet/PVC/Job status; checks
 non-root, dropped capabilities, ServiceAccount token restriction (only
 cluster-agent should have one), probes, and resource requests/limits
-across every pod.
+across every pod; and confirms Prometheus is ready with all three
+application scrape targets `UP` and a representative custom metric present
+per service.
 
-### Reach the Dashboard
+### Automated End-to-End Test
+
+```powershell
+pwsh infrastructure/scripts/e2e-kind.ps1
+```
+
+Deterministic and repeatable - run it as many times as you like against
+an already-deployed stack. Port-forwards the dashboard, opens a WebSocket
+on `/ws/incidents` *before* creating the failure, creates one
+uniquely-named `CrashLoopBackOff` pod, waits for cluster-agent to detect
+it, verifies the WebSocket carried an `INCIDENT_CREATED` notification for
+it, polls the REST proxy until the complete incident appears, and checks
+the two agree on the same incident ID. Always removes its own test pod
+and port-forward, even on failure, and never touches the namespace,
+StatefulSets, PVCs, or the Kafka topic. On failure, writes diagnostics
+(pod status, events, sanitized logs, Kafka consumer-group state) to
+`.e2e-diagnostics/` (git-ignored). The same script runs unmodified in CI -
+see [`.github/workflows/e2e-kind-ci.yml`](.github/workflows/e2e-kind-ci.yml).
+
+### Reach the Dashboard and Prometheus
 
 ```powershell
 kubectl port-forward -n aegisops-system svc/dashboard 8080:8080
+kubectl port-forward -n aegisops-system svc/prometheus 9090:9090
 ```
 
-Then open `http://localhost:8080`. The browser only ever talks to the
-dashboard's own origin - `/api/v1/*` and `/ws/incidents` are reverse-proxied
-in-cluster to `incident-service:8080` and `realtime-gateway:8081`, exactly
-as in the Docker Compose deployment above.
+Open `http://localhost:8080` for the dashboard - the browser only ever
+talks to its own origin, with `/api/v1/*` and `/ws/incidents`
+reverse-proxied in-cluster to `incident-service:8080` and
+`realtime-gateway:8081`, exactly as in the Docker Compose deployment
+above. Open `http://localhost:9090/targets` for Prometheus - see
+[`docs/observability.md`](docs/observability.md) for what to look at.
 
 ### Manual End-to-End Test
 
-With the port-forward above running:
+The same flow `e2e-kind.ps1` runs automatically, by hand - useful for
+watching each step yourself. With the dashboard port-forward above
+running:
 
 ```powershell
 kubectl run crashloop-demo `
@@ -321,8 +357,12 @@ kubectl delete pvc -l app.kubernetes.io/part-of=aegisops -n aegisops-system
 | Incident service | `GET /api/v1/incidents/{incidentId}` | Retrieve an incident |
 | Incident service | `PATCH /api/v1/incidents/{incidentId}/status` | Update incident status |
 | Incident service | `GET /actuator/health` | Health check |
+| Incident service | `GET /actuator/prometheus` | Metrics (in-cluster only - see `docs/observability.md`) |
 | Realtime gateway | `GET /ws/incidents` (WebSocket) | Live incident event stream |
 | Realtime gateway | `GET /health` | Health check |
+| Realtime gateway | `GET /metrics` | Metrics (in-cluster only) |
+| Cluster agent | `GET /healthz`, `GET /readyz` | Health/readiness (in-cluster only) |
+| Cluster agent | `GET /metrics` | Metrics (in-cluster only) |
 | Dashboard | `http://localhost:5173` | Read-only operator UI |
 
 ## Kafka Topic and Event Types
@@ -374,6 +414,13 @@ npm run typecheck
 npm test
 ```
 
+**End-to-end (kind)** - against an already-deployed stack (see
+**Kubernetes Deployment (kind)** above):
+
+```powershell
+pwsh infrastructure/scripts/e2e-kind.ps1
+```
+
 ## Reliability and Security Decisions (Implemented)
 
 - **Transactional outbox**: an incident and its outbound event commit in
@@ -413,7 +460,10 @@ npm test
   authentication in front of it.
 - Python/FastAPI detection service consuming Prometheus metrics.
 - Go remediation engine with operator-approved, policy-bounded actions.
-- Prometheus metrics collection and Grafana dashboards.
+- Grafana dashboards, Alertmanager, and external alert delivery
+  (Prometheus metrics collection and in-Prometheus alert rules are
+  complete - see **Kubernetes Deployment (kind)** above and
+  [`docs/observability.md`](docs/observability.md)).
 - Retry topics, dead-letter topics, and distributed tracing.
 - Helm charts and Terraform/AWS deployment (Kubernetes manifests for local
   kind development are complete - see **Kubernetes Deployment (kind)**
@@ -428,6 +478,9 @@ architecture diagram and implementation order.
 - [Incident service](services/incident-service/README.md)
 - [Realtime gateway](services/realtime-gateway/README.md)
 - [Dashboard](apps/dashboard/README.md)
+- [Kubernetes runbook](docs/runbook.md)
+- [Observability guide](docs/observability.md)
+- [Five-minute demo](docs/demo.md)
 
 ## License
 

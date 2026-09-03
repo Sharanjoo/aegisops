@@ -22,12 +22,15 @@ tell the two apart at a glance.
 | Dashboard container image | Complete | Multi-stage, non-root nginx runtime, same-origin API/WS reverse proxy |
 | Realtime-gateway, cluster-agent container images | Complete | Multi-stage, non-root runtimes |
 | Kubernetes manifests (local kind) | Complete | Kustomize base + kind-local overlay - see **Kubernetes Deployment** below |
+| Prometheus metrics (all three backend services) | Complete | See **Kubernetes Deployment** below and `docs/observability.md` |
+| Local-dev Prometheus deployment + alert rules | Complete | Non-persistent, no Alertmanager - see **Kubernetes Deployment** below |
+| Automated kind end-to-end test + CI | Complete | `infrastructure/scripts/e2e-kind.ps1`, `.github/workflows/e2e-kind-ci.yml` |
 | Acknowledge / resolve endpoints | Planned | Status changes currently go through one generic `PATCH` |
 | Remediation request endpoint | Planned | No remediation engine exists yet |
 | Services endpoint | Planned | No `services` table exists yet |
-| Python detection service | Planned | No Prometheus integration yet |
+| Python detection service | Planned | No metrics-driven anomaly detection exists yet |
 | Go remediation engine | Planned | No automated or approved remediation exists yet |
-| Prometheus / Grafana | Planned | No metrics collection exists yet |
+| Grafana / Alertmanager | Planned | Prometheus itself is complete; visualization and external alert delivery are not |
 | Retry topics / dead-letter topics | Planned | Only direct at-least-once delivery exists today |
 | Distributed tracing | Planned | No trace propagation exists yet |
 | Helm / Terraform / AWS deployment | Planned | Local kind deployment via Kustomize exists today; no chart or cloud deployment yet |
@@ -81,6 +84,7 @@ Owned by the incident service (see
 | `GET` | `/api/v1/incidents/{incidentId}` | Retrieve an incident |
 | `PATCH` | `/api/v1/incidents/{incidentId}/status` | Update incident status |
 | `GET` | `/actuator/health` | Service health check |
+| `GET` | `/actuator/prometheus` | Prometheus metrics (see **Observability** under **Kubernetes Deployment**) |
 
 Cross-origin browser requests to `/api/v1/**` are allowed only from the
 single origin configured by `AEGISOPS_CORS_ALLOWED_ORIGIN` (defaults to
@@ -92,6 +96,11 @@ The realtime gateway exposes:
 |---|---|---|
 | `/ws/incidents` | WebSocket | Incident lifecycle event stream |
 | `/health` | HTTP | Service health check |
+| `/metrics` | HTTP | Prometheus metrics |
+
+The cluster agent, previously a pure background watcher with no HTTP
+surface, now exposes `/healthz`, `/readyz`, and `/metrics` on port 9090
+(see **Observability** under **Kubernetes Deployment**).
 
 #### Planned REST additions (not implemented)
 
@@ -161,9 +170,11 @@ tables exist today:
   deduplicate using `eventId` — the dashboard does this (see below).
 - The incident service accepts cross-origin REST calls from exactly one
   configured origin (`AEGISOPS_CORS_ALLOWED_ORIGIN`), not a wildcard.
-- Health endpoints exist for the incident service (`/actuator/health`) and
-  the realtime gateway (`/health`). The cluster agent has no HTTP endpoint;
-  it is a background watcher.
+- Health endpoints exist for all three backend services - the incident
+  service (`/actuator/health`), the realtime gateway (`/health`), and the
+  cluster agent (`/healthz`, `/readyz`) - and all three also expose
+  Prometheus metrics (see **Observability** under **Kubernetes
+  Deployment**).
 
 #### Planned reliability work (not implemented)
 
@@ -369,6 +380,45 @@ Every pod in this deployment runs under the namespace's Pod Security
 - `automountServiceAccountToken: false` everywhere except cluster-agent,
   the only workload that calls the Kubernetes API.
 
+### Observability
+
+All three backend services expose Prometheus-formatted metrics: the
+incident service via Spring Boot Actuator + Micrometer at
+`/actuator/prometheus` (alongside its existing REST API on port 8080,
+gated by `management.endpoints.web.exposure.include=health,prometheus` -
+no other Actuator endpoint, including `env`, is exposed), the realtime
+gateway via `@prometheus-io/client` at `/metrics` (port 8081, alongside
+`/health`), and the cluster agent via a small dedicated HTTP server
+(`internal/observability`) exposing `/healthz`, `/readyz`, and `/metrics`
+on port 9090 - its only HTTP surface, since the agent otherwise has none.
+`/readyz` reflects whether the agent's Kubernetes informer cache has
+actually synced, not just that the process started.
+
+A single-instance Prometheus (`base/prometheus`, stage
+`40-observability`) scrapes all three via static in-cluster targets - no
+Kubernetes service discovery, so it needs no ServiceAccount token. Every
+custom counter uses small, bounded label sets (container type, outcome,
+event type - never a pod name, incident ID, or error message) and is
+pre-registered at zero for every known label combination at startup, so
+each is visible on the very first scrape rather than only after the
+corresponding event first occurs. Full metric reference, PromQL examples,
+and the four local alert rules (evaluated by Prometheus itself; there is
+no Alertmanager) are in
+[`docs/observability.md`](../docs/observability.md).
+
+`infrastructure/scripts/e2e-kind.ps1` (PowerShell Core, so it runs
+unmodified on Windows locally and on the Ubuntu GitHub Actions runner in
+[`.github/workflows/e2e-kind-ci.yml`](../.github/workflows/e2e-kind-ci.yml))
+exercises the full detection-to-dashboard path deterministically: it
+opens a WebSocket on the dashboard's `/ws/incidents` route *before*
+creating a uniquely-named `CrashLoopBackOff` pod, waits for genuine
+detection, and cross-checks the WebSocket notification's incident ID
+against the one returned by the REST API - bounded polling throughout,
+no fixed sleeps as the synchronization mechanism. The CI workflow
+generates ephemeral, masked, CI-only database credentials at runtime
+(never a repository secret), creates and always tears down its own kind
+cluster, and never publishes an image.
+
 ### Local-Dev Limitations
 
 - MySQL and Kafka are single instances - no replication, no failover, no
@@ -380,6 +430,9 @@ Every pod in this deployment runs under the namespace's Pod Security
 - No Helm chart, no multi-environment overlay beyond `kind-local`, and no
   cloud deployment - see **Target Architecture** below for what a
   production deployment would still need.
+- Prometheus data lives on an `emptyDir` with 6-hour retention - not
+  persistent across a pod restart, and no Alertmanager or Grafana (see
+  **Observability** above and `docs/observability.md`).
 
 ---
 
@@ -483,10 +536,14 @@ above).
 3. Realtime gateway and dashboard — **done** (dashboard is a read-only
    foundation milestone; operator controls are still planned)
 4. Remediation engine and Kubernetes integration — planned
-5. Detection service and Prometheus — planned
-6. Observability and distributed tracing — planned
-7. Kubernetes and Helm deployment — container images and local kind
-   manifests **done**; Helm charts planned
+5. Detection service and Prometheus — Prometheus metrics and local-dev
+   alerting **done**; the Python detection service that would consume
+   them is still planned
+6. Observability and distributed tracing — Prometheus metrics/alerting
+   **done**; Grafana, Alertmanager, and distributed tracing planned
+7. Kubernetes and Helm deployment — container images, local kind
+   manifests, and an automated kind end-to-end test **done**; Helm
+   charts planned
 8. Terraform and AWS deployment — planned
 9. CI/CD, security scanning and load testing — CI exists per-service today;
    security scanning and load testing are planned

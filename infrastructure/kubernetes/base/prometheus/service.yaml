@@ -1,0 +1,19 @@
+# Cluster-internal only - reach it via `kubectl port-forward` (see
+# README.md's Kubernetes Deployment section). No external exposure.
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: aegisops
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    app.kubernetes.io/name: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
