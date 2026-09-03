@@ -136,7 +136,26 @@ function Save-Diagnostics {
         Copy-Item $script:wsMessagesFile (Join-Path $DiagnosticsDir "ws-messages.jsonl") -ErrorAction SilentlyContinue
     }
 
-    Write-Host "Diagnostics written."
+    # Print directly to the workflow log too - not just to files under
+    # $DiagnosticsDir - so the cause is visible even if the artifact
+    # upload step itself doesn't pick the directory up.
+    Write-Host "`n--- diagnostics directory contents ---"
+    Get-ChildItem -Path $DiagnosticsDir -Recurse -File -ErrorAction SilentlyContinue |
+        ForEach-Object { Write-Host "  $($_.FullName) ($($_.Length) bytes)" }
+
+    Write-Host "`n--- WebSocket messages received before failure ---"
+    if ($script:wsMessagesFile -and (Test-Path $script:wsMessagesFile)) {
+        Get-Content $script:wsMessagesFile -ErrorAction SilentlyContinue | Write-Host
+    } else {
+        Write-Host "  (no ws-messages file)"
+    }
+
+    foreach ($name in @("cluster-agent", "incident-service", "realtime-gateway")) {
+        Write-Host "`n--- logs: deployment/$name (last 60 lines) ---"
+        Get-Content (Join-Path $DiagnosticsDir "logs-deployment-$name.txt") -Tail 60 -ErrorAction SilentlyContinue | Write-Host
+    }
+
+    Write-Host "`nDiagnostics written."
 }
 
 try {
