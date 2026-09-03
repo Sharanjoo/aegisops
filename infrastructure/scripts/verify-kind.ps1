@@ -113,36 +113,55 @@ if ($LASTEXITCODE -ne 0 -or $prometheusReady -ne "1") {
     Start-Sleep -Seconds 3
 
     try {
-        $targets = Invoke-RestMethod -Uri "http://localhost:19090/api/v1/targets" -TimeoutSec 10
-        $activeTargets = $targets.data.activeTargets
-
-        foreach ($job in @("incident-service", "realtime-gateway", "cluster-agent")) {
-            $target = $activeTargets | Where-Object { $_.labels.job -eq $job }
-            if (-not $target) {
-                $problems.Add("Prometheus has no active target for job '$job'")
-            } elseif ($target.health -ne "up") {
-                $problems.Add("Prometheus target '$job' is not UP (health=$($target.health))")
-            } else {
-                Write-Host "  target ${job}: UP"
-            }
-        }
-
-        # One representative, always-registered custom metric per service
-        # (see each service's metrics pre-registration) - proves the full
-        # scrape -> ingest path works, not just that the port answers.
-        $representativeMetrics = @(
+        # Prometheus's own scrape_interval is 15s (see base/prometheus's
+        # ConfigMap) and it staggers each target's first scrape rather than
+        # firing all of them in lockstep - immediately after the Deployment
+        # itself becomes ready (which only means its own /-/ready probe
+        # passed, not that it has scraped anything yet), a target can still
+        # legitimately read health "unknown" for a few seconds. Poll rather
+        # than check once.
+        $pollDeadline = (Get-Date).AddSeconds(45)
+        $remainingJobs = @("incident-service", "realtime-gateway", "cluster-agent")
+        $remainingMetrics = @(
             "aegisops_incident_creations_total",
             "aegisops_realtime_gateway_kafka_events_consumed_total",
             "aegisops_cluster_agent_findings_detected_total"
         )
 
-        foreach ($metricName in $representativeMetrics) {
-            $query = Invoke-RestMethod -Uri "http://localhost:19090/api/v1/query?query=$metricName" -TimeoutSec 10
-            if ($query.data.result.Count -eq 0) {
-                $problems.Add("Prometheus has no series for expected metric '$metricName'")
-            } else {
-                Write-Host "  metric ${metricName}: present"
+        while (((Get-Date) -lt $pollDeadline) -and ($remainingJobs.Count -gt 0 -or $remainingMetrics.Count -gt 0)) {
+            if ($remainingJobs.Count -gt 0) {
+                $targets = Invoke-RestMethod -Uri "http://localhost:19090/api/v1/targets" -TimeoutSec 10
+                $activeTargets = $targets.data.activeTargets
+
+                foreach ($job in @($remainingJobs)) {
+                    $target = $activeTargets | Where-Object { $_.labels.job -eq $job }
+                    if ($target -and $target.health -eq "up") {
+                        Write-Host "  target ${job}: UP"
+                        $remainingJobs = $remainingJobs | Where-Object { $_ -ne $job }
+                    }
+                }
             }
+
+            if ($remainingMetrics.Count -gt 0) {
+                foreach ($metricName in @($remainingMetrics)) {
+                    $query = Invoke-RestMethod -Uri "http://localhost:19090/api/v1/query?query=$metricName" -TimeoutSec 10
+                    if ($query.data.result.Count -gt 0) {
+                        Write-Host "  metric ${metricName}: present"
+                        $remainingMetrics = $remainingMetrics | Where-Object { $_ -ne $metricName }
+                    }
+                }
+            }
+
+            if ($remainingJobs.Count -gt 0 -or $remainingMetrics.Count -gt 0) {
+                Start-Sleep -Seconds 5
+            }
+        }
+
+        foreach ($job in $remainingJobs) {
+            $problems.Add("Prometheus target '$job' did not become UP within 45s")
+        }
+        foreach ($metricName in $remainingMetrics) {
+            $problems.Add("Prometheus has no series for expected metric '$metricName' within 45s")
         }
     } catch {
         $problems.Add("Failed to query Prometheus: $($_.Exception.Message)")
