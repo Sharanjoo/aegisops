@@ -58,3 +58,9 @@ jobs:
 
       - name: Build application
         run: npm run build
+
+      - name: Build container image
+        run: |
+          docker build \
+            --tag aegisops/dashboard:ci \
+            .

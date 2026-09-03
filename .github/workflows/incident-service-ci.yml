@@ -44,3 +44,10 @@ jobs:
       - name: Run tests
         working-directory: services/incident-service
         run: ./mvnw --batch-mode clean test
+
+      - name: Build container image
+        working-directory: services/incident-service
+        run: |
+          docker build \
+            --tag aegisops/incident-service:ci \
+            .
