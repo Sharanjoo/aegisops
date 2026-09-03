@@ -1,0 +1,31 @@
+# Headless (clusterIP: None): required as the StatefulSet's governing
+# Service, and gives Kafka its stable in-cluster address - other pods
+# reach it as "kafka:9092", matching KAFKA_ADVERTISED_LISTENERS.
+# No externally exposed listener: nothing outside the cluster needs to
+# reach this broker directly for this milestone.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/part-of: aegisops
+    app.kubernetes.io/component: event-broker
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  clusterIP: None
+  # Without this, DNS only publishes a Ready pod's address - but the
+  # broker's own startup/readiness probe resolves KAFKA_ADVERTISED_LISTENERS
+  # ("kafka:9092") to reconnect after its initial bootstrap, so it can
+  # never pass the probe that would make it Ready in the first place.
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+    - name: broker
+      port: 9092
+      targetPort: 9092
+    - name: controller
+      port: 29093
+      targetPort: 29093

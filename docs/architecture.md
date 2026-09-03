@@ -20,6 +20,8 @@ tell the two apart at a glance.
 | Incident-service CORS | Complete | Single configurable allowed origin, for the local dashboard dev server |
 | Incident-service container image | Complete | Multi-stage, non-root, JRE-only runtime - see **Container Packaging** below |
 | Dashboard container image | Complete | Multi-stage, non-root nginx runtime, same-origin API/WS reverse proxy |
+| Realtime-gateway, cluster-agent container images | Complete | Multi-stage, non-root runtimes |
+| Kubernetes manifests (local kind) | Complete | Kustomize base + kind-local overlay - see **Kubernetes Deployment** below |
 | Acknowledge / resolve endpoints | Planned | Status changes currently go through one generic `PATCH` |
 | Remediation request endpoint | Planned | No remediation engine exists yet |
 | Services endpoint | Planned | No `services` table exists yet |
@@ -28,8 +30,7 @@ tell the two apart at a glance.
 | Prometheus / Grafana | Planned | No metrics collection exists yet |
 | Retry topics / dead-letter topics | Planned | Only direct at-least-once delivery exists today |
 | Distributed tracing | Planned | No trace propagation exists yet |
-| Kubernetes manifests | Planned | Images exist; no Deployment/Service/Ingress yet - the next milestone |
-| Helm / Terraform / AWS deployment | Planned | Local Docker Compose only today |
+| Helm / Terraform / AWS deployment | Planned | Local kind deployment via Kustomize exists today; no chart or cloud deployment yet |
 
 ---
 
@@ -265,9 +266,120 @@ containerized services (incident service, realtime gateway, dashboard)
 alongside MySQL and Kafka on one Docker network, in addition to its
 original role of just providing MySQL/Kafka for natively-run services.
 
-This milestone is container packaging only. No Kubernetes manifests exist
-yet - see **Kubernetes manifests** in the Implementation Status table
-above and **Implementation Order** below.
+This was originally a container-packaging-only milestone; Kubernetes
+manifests that deploy these images are now complete - see **Kubernetes
+Deployment** immediately below.
+
+## Kubernetes Deployment (kind)
+
+Local-development-only. Every workload below runs as a single instance
+with no cross-node HA, and is not a template for a production
+deployment - see **Local-Dev Limitations** at the end of this section.
+
+### Topology
+
+```text
+cluster-agent
+    -> incident-service:8080
+        -> mysql:3306
+        -> kafka:9092
+
+kafka:9092
+    -> realtime-gateway:8081
+
+dashboard:8080
+    -> incident-service:8080 through /api
+    -> realtime-gateway:8081 through /ws/incidents
+```
+
+Only the dashboard needs to be reachable from a browser, via
+`kubectl port-forward`; nothing else has an externally exposed listener.
+All in-cluster hostnames above are Kubernetes Service DNS names within
+the `aegisops-system` namespace.
+
+### Kustomize Structure
+
+`infrastructure/kubernetes/base/` holds one directory per component -
+reusable, environment-agnostic manifests. `overlays/kind-local/` composes
+those bases into four staged Kustomizations, applied in dependency order:
+
+1. `00-namespace` - the `aegisops-system` Namespace (Pod Security
+   `restricted` labels) and, via the deploy script, the Secret.
+2. `10-infrastructure` - MySQL and Kafka StatefulSets.
+3. `20-kafka-topic-init` - a Job that idempotently creates
+   `aegisops.incident.events.v1` once Kafka is reachable.
+4. `30-application` - incident-service, realtime-gateway, dashboard, and
+   cluster-agent.
+
+`base/namespace/` and `base/cluster-agent/` hold the Namespace, RBAC, and
+Deployment manifests that were previously under
+`services/cluster-agent/deploy/kubernetes/` - relocated (not duplicated)
+into this tree because `kubectl kustomize`'s default load restrictor
+refuses to reference files outside a Kustomization's own directory tree.
+`base/cluster-agent/patch-incident-service-url.yaml` is the only change
+from the original manifest: it repoints `AEGISOPS_INCIDENT_SERVICE_URL`
+from `http://host.docker.internal:8080` (agent running on the Docker
+Desktop host) to `http://incident-service:8080` (agent running in-cluster
+alongside it). RBAC is untouched - still `get`/`list`/`watch` on Pods
+only.
+
+See [`README.md`](../README.md#kubernetes-deployment-kind) for the actual
+deploy/verify commands and directory listing.
+
+### MySQL and Kafka
+
+Both are dev-only, single-instance StatefulSets with a headless governing
+Service for stable DNS (`mysql`, `kafka`) and a `PersistentVolumeClaim`
+per instance on kind's default `standard` (`rancher.io/local-path`)
+StorageClass - not replicated, not highly available, and not backed up.
+MySQL is `mysql:8.4` and Kafka is `apache/kafka:4.3.1`, matching the
+versions pinned in `infrastructure/local/compose.yaml`.
+
+Kafka runs in KRaft mode (no ZooKeeper) as a single node acting as both
+broker and controller, with `KAFKA_AUTO_CREATE_TOPICS_ENABLE=false` - the
+`kafka-topic-init` Job is the only thing that creates topics, with
+`--if-not-exists` so re-running it is a no-op once the topic exists. Its
+readiness and liveness probes deliberately use a plain TCP check on the
+broker port rather than `kafka-topics.sh --list`: that CLI launches its
+own JVM per invocation, which was observed to make the broker flap under
+ordinary local scheduling jitter even with no real resource pressure on
+the node. The startup probe still uses the heavier `kafka-topics.sh`
+check, since it is the one place a real functional check belongs -
+gating first readiness once, not running every 10-20 seconds
+indefinitely.
+
+### Security Posture
+
+Every pod in this deployment runs under the namespace's Pod Security
+`restricted` profile:
+
+- non-root, with an explicit `runAsUser`/`runAsGroup` matched to each
+  image's actual non-root user (verified via `docker run --entrypoint id`
+  against each image, since Kubernetes cannot verify `runAsNonRoot` for an
+  image whose `USER` is a non-numeric name without an explicit UID - this
+  is what originally broke the Kafka StatefulSet during initial rollout),
+- `allowPrivilegeEscalation: false` and all Linux capabilities dropped,
+- `seccompProfile: RuntimeDefault`,
+- a read-only root filesystem with a scratch `emptyDir` at `/tmp` (and,
+  for the dashboard, a second `emptyDir` at `/etc/nginx/conf.d` for
+  envsubst's rendered config) wherever the base image supports it - MySQL
+  is the one exception, since its official entrypoint writes broadly
+  across the root filesystem in ways not worth fighting for a dev-only
+  database,
+- `automountServiceAccountToken: false` everywhere except cluster-agent,
+  the only workload that calls the Kubernetes API.
+
+### Local-Dev Limitations
+
+- MySQL and Kafka are single instances - no replication, no failover, no
+  automated backups.
+- No ingress controller: only the dashboard is reachable from a browser,
+  via `kubectl port-forward`, by design for this milestone.
+- No image registry: all four `:dev` images are built locally and loaded
+  directly into kind with `kind load docker-image`.
+- No Helm chart, no multi-environment overlay beyond `kind-local`, and no
+  cloud deployment - see **Target Architecture** below for what a
+  production deployment would still need.
 
 ---
 
@@ -373,8 +485,8 @@ above).
 4. Remediation engine and Kubernetes integration — planned
 5. Detection service and Prometheus — planned
 6. Observability and distributed tracing — planned
-7. Kubernetes and Helm deployment — container images **done**; manifests
-   and Helm charts planned
+7. Kubernetes and Helm deployment — container images and local kind
+   manifests **done**; Helm charts planned
 8. Terraform and AWS deployment — planned
 9. CI/CD, security scanning and load testing — CI exists per-service today;
    security scanning and load testing are planned

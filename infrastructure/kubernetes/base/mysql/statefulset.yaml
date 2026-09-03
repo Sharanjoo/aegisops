@@ -1,0 +1,124 @@
+# Development-only, single-instance MySQL. No replication, no HA, no
+# automated backups - this exists so the in-cluster stack has somewhere
+# to persist incidents for local development and the milestone's manual
+# smoke test, not as a production database. A real deployment would point
+# AEGISOPS_DB_URL at a managed MySQL instance instead of this StatefulSet.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/part-of: aegisops
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mysql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mysql
+        app.kubernetes.io/part-of: aegisops
+        app.kubernetes.io/component: database
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: mysql
+          image: mysql:8.4
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: mysql
+              containerPort: 3306
+
+          envFrom:
+            - secretRef:
+                name: aegisops-secrets
+
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+            - name: tmp
+              mountPath: /tmp
+
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1
+              memory: 768Mi
+
+          securityContext:
+            # No readOnlyRootFilesystem here: the official mysql image's
+            # entrypoint writes across the root filesystem during startup
+            # (config, socket/pid files under /var/run/mysqld, etc.) in
+            # ways not worth fighting for a dev-only database. Persistent
+            # data itself is still isolated to its own PVC below.
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" --silent
+            periodSeconds: 5
+            failureThreshold: 30 # tolerate first-run schema init (up to ~2.5m)
+
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" --silent
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" --silent
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: mysql
+          app.kubernetes.io/part-of: aegisops
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: standard # kind's default StorageClass (rancher.io/local-path)
+        resources:
+          requests:
+            storage: 2Gi

@@ -1,0 +1,22 @@
+# Headless (clusterIP: None): required as the StatefulSet's governing
+# Service, and it doubles as the stable "mysql:3306" client address other
+# pods use - a single-replica StatefulSet has no load-balancing need that
+# a normal ClusterIP would add.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/part-of: aegisops
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306

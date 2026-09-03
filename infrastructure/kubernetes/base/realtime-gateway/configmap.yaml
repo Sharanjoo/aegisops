@@ -1,0 +1,17 @@
+# Matches services/realtime-gateway/README.md's documented environment
+# variables. AEGISOPS_KAFKA_GROUP_ID is intentionally omitted so the
+# established default ("aegisops-realtime-gateway-v1") applies unchanged -
+# this milestone does not alter consumer-group behavior.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: realtime-gateway-config
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: realtime-gateway
+    app.kubernetes.io/part-of: aegisops
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/managed-by: kustomize
+data:
+  AEGISOPS_KAFKA_BROKERS: kafka:9092
+  AEGISOPS_INCIDENT_TOPIC: aegisops.incident.events.v1

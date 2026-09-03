@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Stage 1 of the deployment order: the Namespace must exist before the
+# Secret, and everything else, can be created in it.
+resources:
+  - ../../../base/namespace
