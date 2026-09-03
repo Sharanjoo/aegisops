@@ -19,6 +19,9 @@ AegisOps incidents through the incident-service REST API.
 - Produces structured JSON logs.
 - Runs as a non-root distroless container.
 - Uses read-only Kubernetes RBAC permissions.
+- Exposes `/healthz`, `/readyz`, and Prometheus `/metrics` on a small
+  dedicated HTTP server (`internal/observability`) - see **Configuration**
+  and [`docs/observability.md`](../../docs/observability.md).
 
 ## Detection Flow
 
@@ -55,7 +58,8 @@ cluster-agent/
 │   ├── config/
 │   ├── detection/
 │   ├── incident/
-│   └── kubernetes/
+│   ├── kubernetes/
+│   └── observability/       # /healthz, /readyz, /metrics HTTP server
 ├── Dockerfile
 ├── go.mod
 └── go.sum
@@ -80,6 +84,8 @@ root for the full stack deployment.
 | `AEGISOPS_INCIDENT_SERVICE_URL` | `http://localhost:8080` | Incident-service base URL |
 | `AEGISOPS_INCIDENT_SERVICE_TIMEOUT` | `5s` | HTTP request timeout |
 | `AEGISOPS_FINDING_COOLDOWN` | `15m` | Duplicate-finding suppression period |
+| `AEGISOPS_METRICS_HOST` | `0.0.0.0` | Bind address for `/healthz`, `/readyz`, `/metrics` |
+| `AEGISOPS_METRICS_PORT` | `9090` | Bind port for the same |
 
 When deployed locally inside kind, the Deployment uses
 `http://host.docker.internal:8080` to reach the incident service running on

@@ -95,6 +95,58 @@ foreach ($pod in $pods) {
     }
 }
 
+Write-Host "`n=== Prometheus targets and representative custom metrics ==="
+$prometheusReady = kubectl get deployment prometheus -n $Namespace -o jsonpath='{.status.readyReplicas}' 2>$null
+if ($LASTEXITCODE -ne 0 -or $prometheusReady -ne "1") {
+    $problems.Add("deployment/prometheus is not ready - skipping target/metric verification")
+} else {
+    $pfProcess = Start-Process -FilePath "kubectl" `
+        -ArgumentList "port-forward", "-n", $Namespace, "svc/prometheus", "19090:9090" `
+        -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput "$env:TEMP\verify-kind-prometheus-pf.log" `
+        -RedirectStandardError "$env:TEMP\verify-kind-prometheus-pf.err"
+
+    Start-Sleep -Seconds 3
+
+    try {
+        $targets = Invoke-RestMethod -Uri "http://localhost:19090/api/v1/targets" -TimeoutSec 10
+        $activeTargets = $targets.data.activeTargets
+
+        foreach ($job in @("incident-service", "realtime-gateway", "cluster-agent")) {
+            $target = $activeTargets | Where-Object { $_.labels.job -eq $job }
+            if (-not $target) {
+                $problems.Add("Prometheus has no active target for job '$job'")
+            } elseif ($target.health -ne "up") {
+                $problems.Add("Prometheus target '$job' is not UP (health=$($target.health))")
+            } else {
+                Write-Host "  target ${job}: UP"
+            }
+        }
+
+        # One representative, always-registered custom metric per service
+        # (see each service's metrics pre-registration) - proves the full
+        # scrape -> ingest path works, not just that the port answers.
+        $representativeMetrics = @(
+            "aegisops_incident_creations_total",
+            "aegisops_realtime_gateway_kafka_events_consumed_total",
+            "aegisops_cluster_agent_findings_detected_total"
+        )
+
+        foreach ($metricName in $representativeMetrics) {
+            $query = Invoke-RestMethod -Uri "http://localhost:19090/api/v1/query?query=$metricName" -TimeoutSec 10
+            if ($query.data.result.Count -eq 0) {
+                $problems.Add("Prometheus has no series for expected metric '$metricName'")
+            } else {
+                Write-Host "  metric ${metricName}: present"
+            }
+        }
+    } catch {
+        $problems.Add("Failed to query Prometheus: $($_.Exception.Message)")
+    } finally {
+        Stop-Process -Id $pfProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Host "`n=== Summary ==="
 if ($problems.Count -eq 0) {
     Write-Host "All checks passed."

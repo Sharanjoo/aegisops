@@ -34,6 +34,14 @@ spec:
           image: aegisops/cluster-agent:dev
           imagePullPolicy: IfNotPresent
 
+          ports:
+            - name: observability
+              containerPort: 9090
+
+          envFrom:
+            - configMapRef:
+                name: cluster-agent-config
+
           env:
             - name: AEGISOPS_CLUSTER_NAME
               value: kind-aegisops-dev
@@ -58,3 +66,29 @@ spec:
             capabilities:
               drop:
                 - ALL
+
+          # /healthz always reports ok once the process is up; /readyz only
+          # reports ready once the Kubernetes informer cache has synced -
+          # see internal/observability and PodWatcher.Run's onReady callback.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: observability
+            periodSeconds: 5
+            failureThreshold: 12 # ~1 minute for informer cache sync
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: observability
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: observability
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3

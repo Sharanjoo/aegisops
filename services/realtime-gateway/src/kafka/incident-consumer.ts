@@ -4,6 +4,7 @@ import type {
 } from "kafkajs";
 
 import { parseIncidentEvent } from "./incident-event.js";
+import type { RealtimeMetrics } from "../metrics.js";
 
 export interface EventBroadcaster {
   broadcast(payload: unknown): number;
@@ -26,6 +27,16 @@ export interface ConsumerLogger {
   ): void;
 }
 
+/** Only the meters this consumer actually touches - a RealtimeMetrics satisfies this. */
+export type ConsumerMetrics = Pick<
+  RealtimeMetrics,
+  | "kafkaEventsConsumed"
+  | "kafkaMessagesRejected"
+  | "kafkaProcessingFailures"
+  | "websocketBroadcastAttempts"
+  | "websocketDeliveries"
+>;
+
 export class IncidentEventConsumer {
   private started = false;
 
@@ -33,7 +44,8 @@ export class IncidentEventConsumer {
     private readonly consumer: Consumer,
     private readonly topic: string,
     private readonly broadcaster: EventBroadcaster,
-    private readonly logger: ConsumerLogger
+    private readonly logger: ConsumerLogger,
+    private readonly metrics?: ConsumerMetrics
   ) {}
 
   async start(): Promise<void> {
@@ -105,26 +117,61 @@ export class IncidentEventConsumer {
     partition,
     message
   }: EachMessagePayload): void {
-    if (message.value === null) {
-      this.logger.warn(
-        {
-          topic,
-          partition,
-          offset: message.offset
-        },
-        "Ignoring Kafka message with an empty value"
-      );
-
-      return;
-    }
-
+    // Outer boundary: unexpected errors outside normal validation
+    // rejection (e.g. a broadcaster failure) - a distinct metric from the
+    // expected-rejection path below, and never silently swallowed.
     try {
-      const event = parseIncidentEvent(
-        message.value.toString("utf8")
-      );
+      if (message.value === null) {
+        this.metrics?.kafkaMessagesRejected.inc({
+          reason: "empty_value"
+        });
+
+        this.logger.warn(
+          {
+            topic,
+            partition,
+            offset: message.offset
+          },
+          "Ignoring Kafka message with an empty value"
+        );
+
+        return;
+      }
+
+      let event;
+
+      try {
+        event = parseIncidentEvent(
+          message.value.toString("utf8")
+        );
+      } catch (error) {
+        this.metrics?.kafkaMessagesRejected.inc({
+          reason: "invalid_payload"
+        });
+
+        this.logger.warn(
+          {
+            error,
+            topic,
+            partition,
+            offset: message.offset,
+            key: message.key?.toString("utf8")
+          },
+          "Ignoring invalid incident event"
+        );
+
+        return;
+      }
+
+      this.metrics?.kafkaEventsConsumed.inc({
+        event_type: event.eventType
+      });
+      this.metrics?.websocketBroadcastAttempts.inc();
 
       const clientCount =
         this.broadcaster.broadcast(event);
+
+      this.metrics?.websocketDeliveries.inc(clientCount);
 
       this.logger.info(
         {
@@ -139,15 +186,16 @@ export class IncidentEventConsumer {
         "Incident event broadcast to WebSocket clients"
       );
     } catch (error) {
-      this.logger.warn(
+      this.metrics?.kafkaProcessingFailures.inc();
+
+      this.logger.error(
         {
           error,
           topic,
           partition,
-          offset: message.offset,
-          key: message.key?.toString("utf8")
+          offset: message.offset
         },
-        "Ignoring invalid incident event"
+        "Unexpected error while processing Kafka message"
       );
     }
   }

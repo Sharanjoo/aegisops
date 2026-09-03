@@ -10,6 +10,8 @@ func TestLoadUsesDefaults(t *testing.T) {
 	t.Setenv(incidentServiceURLEnvironment, "")
 	t.Setenv(incidentServiceTimeoutEnvironment, "")
 	t.Setenv(findingCooldownEnvironment, "")
+	t.Setenv(metricsHostEnvironment, "")
+	t.Setenv(metricsPortEnvironment, "")
 
 	configuration, err := Load()
 	if err != nil {
@@ -50,6 +52,22 @@ func TestLoadUsesDefaults(t *testing.T) {
 			configuration.FindingCooldown,
 		)
 	}
+
+	if configuration.MetricsHost != defaultMetricsHost {
+		t.Errorf(
+			"expected metrics host %s, got %s",
+			defaultMetricsHost,
+			configuration.MetricsHost,
+		)
+	}
+
+	if configuration.MetricsPort != defaultMetricsPort {
+		t.Errorf(
+			"expected metrics port %s, got %s",
+			defaultMetricsPort,
+			configuration.MetricsPort,
+		)
+	}
 }
 
 func TestLoadUsesEnvironmentOverrides(t *testing.T) {
@@ -60,6 +78,8 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	)
 	t.Setenv(incidentServiceTimeoutEnvironment, "10s")
 	t.Setenv(findingCooldownEnvironment, "30m")
+	t.Setenv(metricsHostEnvironment, "127.0.0.1")
+	t.Setenv(metricsPortEnvironment, "9999")
 
 	configuration, err := Load()
 	if err != nil {
@@ -94,6 +114,20 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 		t.Errorf(
 			"unexpected cooldown: %s",
 			configuration.FindingCooldown,
+		)
+	}
+
+	if configuration.MetricsHost != "127.0.0.1" {
+		t.Errorf(
+			"unexpected metrics host: %s",
+			configuration.MetricsHost,
+		)
+	}
+
+	if configuration.MetricsPort != "9999" {
+		t.Errorf(
+			"unexpected metrics port: %s",
+			configuration.MetricsPort,
 		)
 	}
 }

@@ -32,7 +32,13 @@ func NewPodWatcher(
 }
 
 // Run starts the Pod informer and blocks until the context is cancelled.
-func (watcher *PodWatcher) Run(ctx context.Context) error {
+// onReady, if non-nil, is called once the informer cache has synced and the
+// watcher is actually able to observe Pods - the point at which the agent
+// should be considered ready to perform its work.
+func (watcher *PodWatcher) Run(
+	ctx context.Context,
+	onReady func(),
+) error {
 	if watcher.clientset == nil {
 		return errors.New("Kubernetes clientset is required")
 	}
@@ -80,6 +86,10 @@ func (watcher *PodWatcher) Run(ctx context.Context) error {
 		}
 
 		return errors.New("Pod informer cache synchronization failed")
+	}
+
+	if onReady != nil {
+		onReady()
 	}
 
 	<-ctx.Done()

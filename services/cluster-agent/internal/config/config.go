@@ -15,6 +15,9 @@ const (
 	incidentServiceTimeoutEnvironment = "AEGISOPS_INCIDENT_SERVICE_TIMEOUT"
 
 	findingCooldownEnvironment = "AEGISOPS_FINDING_COOLDOWN"
+
+	metricsHostEnvironment = "AEGISOPS_METRICS_HOST"
+	metricsPortEnvironment = "AEGISOPS_METRICS_PORT"
 )
 
 const (
@@ -23,6 +26,9 @@ const (
 
 	defaultIncidentServiceTimeout = 5 * time.Second
 	defaultFindingCooldown        = 15 * time.Minute
+
+	defaultMetricsHost = "0.0.0.0"
+	defaultMetricsPort = "9090"
 )
 
 // Config contains the cluster agent runtime configuration.
@@ -31,6 +37,8 @@ type Config struct {
 	IncidentServiceURL     string
 	IncidentServiceTimeout time.Duration
 	FindingCooldown        time.Duration
+	MetricsHost            string
+	MetricsPort            string
 }
 
 // Load reads configuration from environment variables.
@@ -62,6 +70,14 @@ func Load() (Config, error) {
 		),
 		IncidentServiceTimeout: incidentServiceTimeout,
 		FindingCooldown:        findingCooldown,
+		MetricsHost: environmentOrDefault(
+			metricsHostEnvironment,
+			defaultMetricsHost,
+		),
+		MetricsPort: environmentOrDefault(
+			metricsPortEnvironment,
+			defaultMetricsPort,
+		),
 	}, nil
 }
 

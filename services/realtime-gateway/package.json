@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@fastify/websocket": "^11.3.0",
+    "@prometheus-io/client": "^0.16.1",
     "fastify": "^5.12.1",
     "kafkajs": "^2.2.4",
     "ws": "^8.21.3",

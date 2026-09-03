@@ -3,6 +3,7 @@ package io.aegisops.incident.application;
 import io.aegisops.incident.api.CreateIncidentRequest;
 import io.aegisops.incident.api.UpdateIncidentStatusRequest;
 import io.aegisops.incident.domain.Incident;
+import io.aegisops.incident.domain.IncidentSeverity;
 import io.aegisops.incident.domain.IncidentStatus;
 import io.aegisops.incident.exception.IncidentNotFoundException;
 import io.aegisops.incident.exception.InvalidIncidentStatusTransitionException;
@@ -11,6 +12,9 @@ import io.aegisops.incident.messaging.outbox.IncidentOutboxWriter;
 import io.aegisops.incident.persistence.IncidentEntity;
 import io.aegisops.incident.persistence.IncidentJpaRepository;
 import io.aegisops.incident.persistence.IncidentPersistenceMapper;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,18 +26,34 @@ import java.util.UUID;
 @Transactional
 public class IncidentApplicationService {
 
+    private static final Logger LOGGER =
+            LoggerFactory.getLogger(IncidentApplicationService.class);
+
     private final IncidentJpaRepository incidentRepository;
     private final IncidentPersistenceMapper incidentMapper;
     private final IncidentOutboxWriter outboxWriter;
+    private final MeterRegistry meterRegistry;
 
     public IncidentApplicationService(
             IncidentJpaRepository incidentRepository,
             IncidentPersistenceMapper incidentMapper,
-            IncidentOutboxWriter outboxWriter
+            IncidentOutboxWriter outboxWriter,
+            MeterRegistry meterRegistry
     ) {
         this.incidentRepository = incidentRepository;
         this.incidentMapper = incidentMapper;
         this.outboxWriter = outboxWriter;
+        this.meterRegistry = meterRegistry;
+
+        // Registers each bounded severity at 0 immediately, rather than
+        // only after the first incident of that severity is ever created -
+        // so the counter is visible on the very first Prometheus scrape.
+        for (IncidentSeverity severity : IncidentSeverity.values()) {
+            meterRegistry.counter(
+                    "aegisops.incident.creations",
+                    "severity", severity.name()
+            );
+        }
     }
 
     public Incident create(CreateIncidentRequest request) {
@@ -58,6 +78,18 @@ public class IncidentApplicationService {
 
         outboxWriter.append(
                 IncidentEvent.created(savedIncident)
+        );
+
+        meterRegistry.counter(
+                "aegisops.incident.creations",
+                "severity", savedIncident.severity().name()
+        ).increment();
+
+        LOGGER.info(
+                "Created incident {} for service {} (severity={})",
+                savedIncident.id(),
+                savedIncident.serviceName(),
+                savedIncident.severity()
         );
 
         return savedIncident;
@@ -117,6 +149,19 @@ public class IncidentApplicationService {
                         updatedIncident,
                         currentStatus
                 )
+        );
+
+        meterRegistry.counter(
+                "aegisops.incident.status.changes",
+                "from", currentStatus.name(),
+                "to", targetStatus.name()
+        ).increment();
+
+        LOGGER.info(
+                "Incident {} status changed {} -> {}",
+                updatedIncident.id(),
+                currentStatus,
+                targetStatus
         );
 
         return updatedIncident;

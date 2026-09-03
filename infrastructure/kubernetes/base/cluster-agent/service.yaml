@@ -1,0 +1,18 @@
+# Cluster-internal only - reachable at cluster-agent:9090 for Prometheus
+# scraping (see base/prometheus) and for local troubleshooting via
+# `kubectl port-forward`. Not exposed outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cluster-agent
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: cluster-agent
+    app.kubernetes.io/part-of: aegisops
+spec:
+  selector:
+    app.kubernetes.io/name: cluster-agent
+  ports:
+    - name: observability
+      port: 9090
+      targetPort: 9090

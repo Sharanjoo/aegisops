@@ -6,13 +6,16 @@ import {
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { IncidentEventConsumer } from "./kafka/incident-consumer.js";
+import { createMetrics } from "./metrics.js";
 import { ConnectionHub } from "./websocket/connection-hub.js";
 
 const config = loadConfig();
 const connectionHub = new ConnectionHub();
+const metrics = createMetrics();
 
 const app = await buildApp(config, {
-  connectionHub
+  connectionHub,
+  metrics
 });
 
 const kafka = new Kafka({
@@ -27,7 +30,8 @@ const incidentConsumer = new IncidentEventConsumer(
   }),
   config.incidentTopic,
   connectionHub,
-  app.log
+  app.log,
+  metrics
 );
 
 let shuttingDown = false;

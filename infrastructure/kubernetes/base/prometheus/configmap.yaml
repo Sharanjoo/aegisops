@@ -1,0 +1,81 @@
+# Dev-only local observability: static in-cluster scrape targets, no
+# Kubernetes API service discovery (so no ServiceAccount token is needed -
+# see deployment.yaml), and a short retention window backed by an emptyDir
+# (see deployment.yaml's comment on data persistence).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: aegisops
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/managed-by: kustomize
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    rule_files:
+      - /etc/prometheus/alert-rules.yml
+
+    scrape_configs:
+      - job_name: incident-service
+        metrics_path: /actuator/prometheus
+        static_configs:
+          - targets: ["incident-service:8080"]
+
+      - job_name: realtime-gateway
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["realtime-gateway:8081"]
+
+      - job_name: cluster-agent
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["cluster-agent:9090"]
+
+  # Evaluated by Prometheus itself and visible under Prometheus's own
+  # "Alerts" page - there is no Alertmanager in this milestone, so nothing
+  # is paged, emailed, or otherwise delivered externally.
+  alert-rules.yml: |
+    groups:
+      - name: aegisops.rules
+        rules:
+          - alert: AegisOpsScrapeTargetDown
+            expr: up{job=~"incident-service|realtime-gateway|cluster-agent"} == 0
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "AegisOps scrape target {{ $labels.job }} is down"
+              description: "Prometheus has not been able to scrape {{ $labels.job }} for at least 1 minute."
+
+          - alert: IncidentOutboxPublicationFailing
+            expr: increase(aegisops_outbox_publications_total{outcome="failed"}[5m]) > 0
+            for: 0m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Incident outbox publications are failing"
+              description: "The incident service has recorded at least one failed outbox publication to Kafka in the last 5 minutes."
+
+          - alert: ClusterAgentIncidentSubmissionFailing
+            expr: increase(aegisops_cluster_agent_incident_submissions_total{outcome="failed"}[5m]) > 2
+            for: 0m
+            labels:
+              severity: warning
+            annotations:
+              summary: "cluster-agent repeatedly failed to submit incidents"
+              description: "cluster-agent has recorded more than 2 failed incident-service submissions in the last 5 minutes - the incident service may be unreachable or unhealthy."
+
+          - alert: RealtimeGatewayEventProcessingFailing
+            expr: increase(aegisops_realtime_gateway_kafka_processing_failures_total[5m]) > 0
+            for: 0m
+            labels:
+              severity: warning
+            annotations:
+              summary: "realtime-gateway is failing to process Kafka events"
+              description: "realtime-gateway has recorded at least one unexpected Kafka message processing failure in the last 5 minutes."
