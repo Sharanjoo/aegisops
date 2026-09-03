@@ -100,11 +100,15 @@ $prometheusReady = kubectl get deployment prometheus -n $Namespace -o jsonpath='
 if ($LASTEXITCODE -ne 0 -or $prometheusReady -ne "1") {
     $problems.Add("deployment/prometheus is not ready - skipping target/metric verification")
 } else {
+    # -NoNewWindow (not -WindowStyle, which Start-Process only supports on
+    # Windows) and .NET's own temp path (not $env:TEMP, unset on Linux) -
+    # this script runs both locally on Windows and in Ubuntu CI.
+    $tempDir = [System.IO.Path]::GetTempPath()
     $pfProcess = Start-Process -FilePath "kubectl" `
         -ArgumentList "port-forward", "-n", $Namespace, "svc/prometheus", "19090:9090" `
-        -WindowStyle Hidden -PassThru `
-        -RedirectStandardOutput "$env:TEMP\verify-kind-prometheus-pf.log" `
-        -RedirectStandardError "$env:TEMP\verify-kind-prometheus-pf.err"
+        -NoNewWindow -PassThru `
+        -RedirectStandardOutput (Join-Path $tempDir "verify-kind-prometheus-pf.log") `
+        -RedirectStandardError (Join-Path $tempDir "verify-kind-prometheus-pf.err")
 
     Start-Sleep -Seconds 3
 
