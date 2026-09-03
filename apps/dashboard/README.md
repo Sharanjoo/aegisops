@@ -137,13 +137,24 @@ The header shows one of four states, driven by `useIncidentSocket`:
 
 ## Environment variables
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `VITE_INCIDENT_API_BASE_URL` | `http://localhost:8080` | Incident service REST base URL |
-| `VITE_REALTIME_WS_URL` | `ws://localhost:8081/ws/incidents` | Realtime gateway WebSocket URL |
+`VITE_*` variables are read by Vite at **build** time and baked into the
+compiled bundle - they cannot change after the app is built. Their default
+depends on the build mode:
 
-Copy `.env.example` to `.env` to override either for your environment;
-`.env` is git-ignored.
+| Variable | Dev default (`npm run dev`) | Production build default (`npm run build`, and the container image) |
+|---|---|---|
+| `VITE_INCIDENT_API_BASE_URL` | `http://localhost:8080` | `` (empty - same origin) |
+| `VITE_REALTIME_WS_URL` | `ws://localhost:8081/ws/incidents` | `/ws/incidents` (same origin) |
+
+In development there is no reverse proxy in front of Vite's dev server, so
+the defaults point straight at the services' documented local ports.
+**Production intentionally does not** - a same-origin relative default
+means the compiled bundle never has a specific host baked in, so the same
+build works behind any origin. The container image's nginx runtime fills
+that role: it serves the bundle and reverse-proxies `/api/*` and
+`/ws/incidents` to whichever backends its own environment variables name
+- see **Container Image** below. Copy `.env.example` to `.env` to override
+either variable for local development; `.env` is git-ignored.
 
 ```powershell
 Copy-Item .env.example .env
@@ -192,6 +203,72 @@ defaulting to `http://localhost:5173`) - see that service's README for
 details. The realtime gateway needed no change: browsers do not apply the
 `fetch`/XHR CORS mechanism to WebSocket handshakes, and the gateway does
 not otherwise restrict connections by origin.
+
+## Container Image
+
+`Dockerfile` is a multi-stage build: `node:22.23.2-alpine3.23` installs
+with `npm ci` and runs `npm run build`, and only the compiled
+`dist/` output is copied into an `nginxinc/nginx-unprivileged:1.29-alpine`
+runtime stage - no Node.js, no source, no dev dependencies, no test files
+in the final image. That image already runs as a non-root user and
+listens on the unprivileged port 8080.
+
+### Routing inside the container
+
+nginx serves the static bundle and reverse-proxies same-origin routes to
+runtime-configurable upstreams, resolved via nginx's built-in envsubst
+templating at container start (`nginx.conf.template`,
+`NGINX_ENVSUBST_FILTER=^AEGISOPS_` so only these two variables are
+substituted - everything else, including nginx's own `$host`-style
+variables, is left alone):
+
+| Route | Proxied to | Variable |
+|---|---|---|
+| `/api/*` | Incident service | `AEGISOPS_INCIDENT_SERVICE_URL` (default `http://incident-service:8080`) |
+| `/ws/incidents` | Realtime gateway, upgrade headers preserved | `AEGISOPS_REALTIME_GATEWAY_URL` (default `http://realtime-gateway:8081`) |
+| everything else | `index.html` (SPA fallback) | n/a |
+| `/health` | `200 OK` plain text | n/a |
+
+The browser only ever talks to the dashboard's own origin - it never
+connects to `incident-service` or `realtime-gateway` directly, which
+would be unreachable/meaningless outside a container network anyway.
+
+Build the image:
+
+```powershell
+cd .\apps\dashboard
+docker build --tag aegisops/dashboard:dev .
+```
+
+Run it on the same Docker network as the incident service and realtime
+gateway containers (`aegisops-local_default`):
+
+```powershell
+docker run --detach `
+    --name aegisops-dashboard `
+    --network aegisops-local_default `
+    --publish 8090:8080 `
+    --env AEGISOPS_INCIDENT_SERVICE_URL=http://incident-service:8080 `
+    --env AEGISOPS_REALTIME_GATEWAY_URL=http://realtime-gateway:8081 `
+    aegisops/dashboard:dev
+```
+
+Open `http://localhost:8090`. `infrastructure/local/compose.yaml` runs all
+of this for you with `docker compose up -d dashboard`.
+
+Inspect what shipped:
+
+```powershell
+docker inspect aegisops/dashboard:dev --format '{{.Config.User}}'
+docker inspect aegisops/dashboard:dev --format '{{.Config.ExposedPorts}}'
+docker inspect aegisops/dashboard:dev --format '{{.Config.Healthcheck}}'
+```
+
+This milestone is container packaging only - no Kubernetes manifests yet.
+The same-origin proxy design exists specifically so that boundary is
+clean: a future Kubernetes Ingress/Service only has to point
+`AEGISOPS_INCIDENT_SERVICE_URL`/`AEGISOPS_REALTIME_GATEWAY_URL` at cluster
+DNS names, with no dashboard code or rebuild involved.
 
 ## Current limitations
 

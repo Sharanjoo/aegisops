@@ -18,6 +18,8 @@ tell the two apart at a glance.
 | Node.js realtime gateway | Complete | Kafka consumer, WebSocket broadcast |
 | React dashboard | Complete (read-only foundation) | REST snapshot + WebSocket live updates; no auth or mutation controls |
 | Incident-service CORS | Complete | Single configurable allowed origin, for the local dashboard dev server |
+| Incident-service container image | Complete | Multi-stage, non-root, JRE-only runtime - see **Container Packaging** below |
+| Dashboard container image | Complete | Multi-stage, non-root nginx runtime, same-origin API/WS reverse proxy |
 | Acknowledge / resolve endpoints | Planned | Status changes currently go through one generic `PATCH` |
 | Remediation request endpoint | Planned | No remediation engine exists yet |
 | Services endpoint | Planned | No `services` table exists yet |
@@ -26,6 +28,7 @@ tell the two apart at a glance.
 | Prometheus / Grafana | Planned | No metrics collection exists yet |
 | Retry topics / dead-letter topics | Planned | Only direct at-least-once delivery exists today |
 | Distributed tracing | Planned | No trace propagation exists yet |
+| Kubernetes manifests | Planned | Images exist; no Deployment/Service/Ingress yet - the next milestone |
 | Helm / Terraform / AWS deployment | Planned | Local Docker Compose only today |
 
 ---
@@ -230,6 +233,42 @@ capped at 30s).
 
 See `apps/dashboard/README.md` for the full implementation notes.
 
+### Container Packaging
+
+Both the incident service and the dashboard have production-oriented,
+multi-stage Dockerfiles - `services/incident-service/Dockerfile` and
+`apps/dashboard/Dockerfile`. Both:
+
+- build in one stage and ship only the compiled artifact (a jar; a static
+  `dist/` bundle) in a separate, minimal runtime stage,
+- run as a dedicated non-root user,
+- declare a container `HEALTHCHECK` against the health endpoint already
+  documented above,
+- use an exec-form entrypoint so the process receives `SIGTERM` directly
+  for graceful shutdown, and
+- pin exact base-image versions - no floating `latest` tags.
+
+Neither image hardcodes environment-specific configuration. The incident
+service keeps environment variables as its only runtime-configuration
+mechanism (see **Current REST API** above); nothing changed there. The
+dashboard's static bundle cannot read environment variables at
+runtime (Vite's `VITE_*` variables are compiled in), so instead its
+container runs nginx configured to reverse-proxy `/api/*` and
+`/ws/incidents` to upstream services named by environment variables
+resolved at container start - the browser only ever calls the
+dashboard's own origin, never a backend container name directly. See
+`apps/dashboard/README.md`'s **Container Image** section for the exact
+routes and variables.
+
+`infrastructure/local/compose.yaml` can build and run all three
+containerized services (incident service, realtime gateway, dashboard)
+alongside MySQL and Kafka on one Docker network, in addition to its
+original role of just providing MySQL/Kafka for natively-run services.
+
+This milestone is container packaging only. No Kubernetes manifests exist
+yet - see **Kubernetes manifests** in the Implementation Status table
+above and **Implementation Order** below.
+
 ---
 
 ## Target Architecture (Roadmap)
@@ -334,7 +373,8 @@ above).
 4. Remediation engine and Kubernetes integration — planned
 5. Detection service and Prometheus — planned
 6. Observability and distributed tracing — planned
-7. Kubernetes and Helm deployment — planned
+7. Kubernetes and Helm deployment — container images **done**; manifests
+   and Helm charts planned
 8. Terraform and AWS deployment — planned
 9. CI/CD, security scanning and load testing — CI exists per-service today;
    security scanning and load testing are planned

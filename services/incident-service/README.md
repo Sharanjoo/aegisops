@@ -160,3 +160,54 @@ and Kafka containers.
 cd .\services\incident-service
 .\mvnw.cmd clean test
 ```
+
+## Container Image
+
+`Dockerfile` is a multi-stage build: `eclipse-temurin:21.0.9_10-jdk-alpine`
+compiles the jar with the Maven wrapper, and only the resulting jar is
+copied into an `eclipse-temurin:21.0.9_10-jre-alpine` runtime stage - no
+JDK, no build tooling, no source in the final image. The runtime process
+runs as a dedicated non-root `aegisops` user, and the image `HEALTHCHECK`
+polls the same `/actuator/health` endpoint used above.
+
+Build the image:
+
+```powershell
+cd .\services\incident-service
+docker build --tag aegisops/incident-service:dev .
+```
+
+Run it on the same Docker network as the local MySQL/Kafka containers
+(`aegisops-local_default`, created by `infrastructure/local/compose.yaml`):
+
+```powershell
+docker run --detach `
+    --name aegisops-incident-service `
+    --network aegisops-local_default `
+    --publish 8080:8080 `
+    --env AEGISOPS_DB_URL="jdbc:mysql://mysql:3306/aegisops?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" `
+    --env AEGISOPS_DB_USERNAME=aegisops `
+    --env AEGISOPS_DB_PASSWORD=aegisops_dev_password `
+    --env AEGISOPS_KAFKA_BOOTSTRAP_SERVERS=kafka:19092 `
+    --env AEGISOPS_CORS_ALLOWED_ORIGIN=http://localhost:8090 `
+    aegisops/incident-service:dev
+```
+
+`AEGISOPS_DB_PASSWORD` above is the clearly-labeled local dev password from
+`infrastructure/local/.env.example` - substitute your own configuration's
+value, never a real credential. Every value in this table is the same
+runtime-configuration mechanism described in **Configuration** above; the
+image hardcodes none of it, so the same image works in any environment
+that supplies these variables. `infrastructure/local/compose.yaml` runs
+all of this for you with `docker compose up -d incident-service`.
+
+Inspect what shipped:
+
+```powershell
+docker inspect aegisops/incident-service:dev --format '{{.Config.User}}'
+docker inspect aegisops/incident-service:dev --format '{{.Config.ExposedPorts}}'
+docker inspect aegisops/incident-service:dev --format '{{.Config.Healthcheck}}'
+```
+
+This milestone is container packaging only - no Kubernetes manifests yet;
+that is a separate, later milestone building on these images.

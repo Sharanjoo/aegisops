@@ -1,0 +1,53 @@
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Baseline security headers. No CSP: the SPA is served same-origin with
+    # the API/WS proxy in front of it, so a hand-tuned policy is left to
+    # the Kubernetes milestone once the real deployment topology is fixed.
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    # Container/orchestrator health check target - see HEALTHCHECK below.
+    location = /health {
+        access_log off;
+        default_type text/plain;
+        return 200 "OK\n";
+    }
+
+    # Same-origin REST route. AEGISOPS_INCIDENT_SERVICE_URL is resolved at
+    # container start by nginx's envsubst templating (NGINX_ENVSUBST_FILTER
+    # in the Dockerfile restricts substitution to AEGISOPS_* names only, so
+    # nginx's own $-variables below are left untouched).
+    location /api/ {
+        proxy_pass ${AEGISOPS_INCIDENT_SERVICE_URL}/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Same-origin WebSocket route. Upgrade/Connection headers are required
+    # for the HTTP/1.1 upgrade handshake to reach the realtime gateway.
+    location /ws/incidents {
+        proxy_pass ${AEGISOPS_REALTIME_GATEWAY_URL}/ws/incidents;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+    }
+
+    # React Router / SPA fallback: any other path serves index.html so
+    # client-side routing and hard refreshes both work.
+    location / {
+        try_files $uri /index.html;
+    }
+}

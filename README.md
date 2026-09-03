@@ -17,8 +17,9 @@ still on the roadmap — planned components are never described as working.
 | Incident service (Java/Spring Boot) — REST API, MySQL, outbox | Complete |
 | Realtime gateway (Node.js) — Kafka to WebSocket bridge | Complete |
 | React dashboard | Complete (read-only foundation) |
+| Container images (incident service, dashboard) | Complete |
 | Remediation engine, detection service, Prometheus, Grafana | Planned |
-| Helm, Terraform/AWS deployment | Planned |
+| Kubernetes manifests, Helm, Terraform/AWS deployment | Planned |
 
 The dashboard is read-only: no authentication and no incident mutation
 controls (acknowledge/resolve) yet — see the Roadmap section below.
@@ -78,7 +79,8 @@ aegisops/
 
 ## Prerequisites
 
-- Docker Desktop (MySQL, Kafka, and integration test containers)
+- Docker Desktop (MySQL, Kafka, integration test containers, and the
+  application container images below)
 - Java 21 and Maven (or use the included `mvnw` wrapper)
 - Node.js 22 (see each Node project's `.nvmrc`)
 - Go 1.27
@@ -127,6 +129,38 @@ docker compose -f .\infrastructure\local\compose.yaml ps
    ```
    See [`services/cluster-agent/README.md`](services/cluster-agent/README.md)
    for the full kind/Kubernetes deployment flow.
+
+## Container Images
+
+The incident service and dashboard each have a production-oriented,
+multi-stage Dockerfile - non-root runtime user, pinned base image
+versions, and a container `HEALTHCHECK`. Full details (build args, runtime
+environment variables, image inspection) are in each service's own
+README; this is the quick path.
+
+Build both images:
+
+```powershell
+docker build -t aegisops/incident-service:dev .\services\incident-service
+docker build -t aegisops/dashboard:dev .\apps\dashboard
+```
+
+Or run the whole stack - MySQL, Kafka, the incident service, the realtime
+gateway, and the dashboard - as containers on one Docker network:
+
+```powershell
+docker compose -f .\infrastructure\local\compose.yaml up -d --build
+```
+
+The dashboard is then reachable at `http://localhost:8090`. Its nginx
+runtime reverse-proxies `/api/*` and `/ws/incidents` to the incident
+service and realtime gateway over the compose network - the browser never
+talks to those container names directly, and the same image works behind
+any origin without a rebuild (see
+[`apps/dashboard/README.md`](apps/dashboard/README.md#container-image)).
+
+Kubernetes manifests that consume these images are the next milestone -
+see the Roadmap below.
 
 ## Important Endpoints
 
@@ -224,8 +258,8 @@ npm test
 - Go remediation engine with operator-approved, policy-bounded actions.
 - Prometheus metrics collection and Grafana dashboards.
 - Retry topics, dead-letter topics, and distributed tracing.
-- Docker packaging for the incident service and dashboard, Helm charts,
-  and Terraform/AWS deployment.
+- Kubernetes manifests for the containerized services (the next
+  milestone), Helm charts, and Terraform/AWS deployment.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full target
 architecture diagram and implementation order.

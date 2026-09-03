@@ -64,5 +64,73 @@ services:
       retries: 15
       start_period: 30s
 
+  # The three services below are optional: this compose file's original
+  # purpose (starting MySQL and Kafka for a natively-run `mvnw`/`npm run
+  # dev`) still works unchanged. They exist for running the full stack as
+  # containers - `docker compose -f infrastructure/local/compose.yaml up`
+  # - see the README links below for image build commands and the
+  # standalone `docker run` form.
+  incident-service:
+    build:
+      context: ../../services/incident-service
+    image: aegisops/incident-service:dev
+    container_name: aegisops-incident-service
+    restart: unless-stopped
+    stop_grace_period: 25s
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      # Internal Docker-network addresses - see services/incident-service/README.md.
+      AEGISOPS_DB_URL: jdbc:mysql://mysql:3306/aegisops?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      AEGISOPS_DB_USERNAME: ${MYSQL_USER}
+      AEGISOPS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      AEGISOPS_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      AEGISOPS_CORS_ALLOWED_ORIGIN: http://localhost:8090
+
+  realtime-gateway:
+    build:
+      context: ../../services/realtime-gateway
+    image: aegisops/realtime-gateway:dev
+    container_name: aegisops-realtime-gateway
+    restart: unless-stopped
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+    ports:
+      - "8081:8081"
+
+    environment:
+      AEGISOPS_KAFKA_BROKERS: kafka:19092
+
+  dashboard:
+    build:
+      context: ../../apps/dashboard
+    image: aegisops/dashboard:dev
+    container_name: aegisops-dashboard
+    restart: unless-stopped
+
+    depends_on:
+      - incident-service
+      - realtime-gateway
+
+    # Mapped to a different host port than incident-service's 8080 - the
+    # container itself still listens on 8080 internally.
+    ports:
+      - "8090:8080"
+
+    environment:
+      AEGISOPS_INCIDENT_SERVICE_URL: http://incident-service:8080
+      AEGISOPS_REALTIME_GATEWAY_URL: http://realtime-gateway:8081
+
 volumes:
   aegisops-mysql-data:
