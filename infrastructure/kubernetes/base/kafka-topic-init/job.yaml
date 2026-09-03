@@ -1,0 +1,95 @@
+# Deterministically provisions aegisops.incident.events.v1 with the
+# partition count and replication factor the incident service itself
+# already declares (see KafkaTopicConfiguration.java: partitions(3),
+# replicas(1)) - independent of whichever application pod happens to
+# start first, since KAFKA_AUTO_CREATE_TOPICS_ENABLE is "false" here.
+# --if-not-exists makes re-running this Job (e.g. via the deploy script)
+# a safe no-op once the topic exists.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topic-init
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: kafka-topic-init
+    app.kubernetes.io/part-of: aegisops
+    app.kubernetes.io/component: event-broker
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  backoffLimit: 10
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-topic-init
+        app.kubernetes.io/part-of: aegisops
+        app.kubernetes.io/component: event-broker
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+
+      securityContext:
+        # Same image as base/kafka - see that StatefulSet's securityContext
+        # comment: the kubelet cannot verify runAsNonRoot against the
+        # image's non-numeric USER (appuser) without an explicit UID.
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: kafka-topic-init
+          image: apache/kafka:4.3.1
+          imagePullPolicy: IfNotPresent
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+
+          # Tolerates Kafka startup delay even if this Job races ahead of
+          # the StatefulSet's own readiness probe: retries the bootstrap
+          # check itself before attempting topic creation, in addition to
+          # the Job-level backoffLimit above.
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+
+              echo "Waiting for kafka:9092 to accept admin requests..."
+              for attempt in $(seq 1 30); do
+                if /opt/kafka/bin/kafka-broker-api-versions.sh \
+                    --bootstrap-server kafka:9092 >/dev/null 2>&1; then
+                  echo "Kafka is reachable."
+                  break
+                fi
+                echo "Attempt ${attempt}/30: Kafka not ready yet, waiting 5s..."
+                sleep 5
+              done
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic aegisops.incident.events.v1 \
+                --partitions 3 \
+                --replication-factor 1
+
+              echo "Topic ready:"
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --describe \
+                --topic aegisops.incident.events.v1

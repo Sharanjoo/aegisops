@@ -56,15 +56,21 @@ cluster-agent/
 │   ├── detection/
 │   ├── incident/
 │   └── kubernetes/
-├── deploy/
-│   └── kubernetes/
-│       ├── namespace.yaml
-│       ├── rbac.yaml
-│       └── deployment.yaml
 ├── Dockerfile
 ├── go.mod
 └── go.sum
 ```
+
+The Kubernetes manifests that used to live under `deploy/kubernetes/`
+here have moved to
+[`infrastructure/kubernetes/base/namespace/`](../../infrastructure/kubernetes/base/namespace/)
+and
+[`infrastructure/kubernetes/base/cluster-agent/`](../../infrastructure/kubernetes/base/cluster-agent/)
+(content unchanged, aside from one patch overriding
+`AEGISOPS_INCIDENT_SERVICE_URL` for in-cluster use) - see **Kubernetes
+Deployment** below and
+[`README.md`](../../README.md#kubernetes-deployment-kind) at the repo
+root for the full stack deployment.
 
 ## Configuration
 
@@ -152,22 +158,18 @@ kind load docker-image `
 
 ## Kubernetes Deployment
 
-Apply the namespace and Pod Security configuration:
+The recommended path is the full-stack deployment script at the repo
+root - `pwsh infrastructure/scripts/deploy-kind.ps1` - which applies
+the namespace, RBAC, and this Deployment (plus the rest of the AegisOps
+stack) via Kustomize in the correct order. See
+[`README.md`](../../README.md#kubernetes-deployment-kind) at the repo
+root for the full flow.
+
+To apply only the agent's own manifests directly, from the repo root:
 
 ```powershell
-kubectl apply -f .\deploy\kubernetes\namespace.yaml
-```
-
-Apply the ServiceAccount and read-only RBAC:
-
-```powershell
-kubectl apply -f .\deploy\kubernetes\rbac.yaml
-```
-
-Deploy the agent:
-
-```powershell
-kubectl apply -f .\deploy\kubernetes\deployment.yaml
+kubectl apply -k infrastructure\kubernetes\overlays\kind-local\00-namespace
+kubectl apply -k infrastructure\kubernetes\base\cluster-agent
 ```
 
 Verify the rollout:

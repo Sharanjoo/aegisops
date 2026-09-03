@@ -1,0 +1,50 @@
+# Non-secret KRaft configuration, adapted from infrastructure/local/compose.yaml's
+# Kafka service. No ZooKeeper: this image runs Kafka in combined
+# broker+controller KRaft mode, single node - development only, not an
+# HA cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-config
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/part-of: aegisops
+    app.kubernetes.io/component: event-broker
+    app.kubernetes.io/managed-by: kustomize
+data:
+  KAFKA_NODE_ID: "1"
+  KAFKA_PROCESS_ROLES: broker,controller
+  # Single-node quorum: this broker is its own (and only) controller.
+  KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:29093
+
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+  KAFKA_LISTENERS: CONTROLLER://:29093,PLAINTEXT://:9092
+  # Only one listener, reachable in-cluster as kafka:9092 - unlike the
+  # Compose setup there is no separate host-facing listener to advertise;
+  # nothing outside the cluster is meant to reach this broker directly.
+  KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+  KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+  KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: "1"
+  KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: "1"
+
+  # Explicit topic provisioning only (see ../kafka-topic-init) - the
+  # incident service's own Spring KafkaAdmin would otherwise auto-create
+  # it, but disabling this keeps provisioning deterministic and not
+  # dependent on which application happens to start first.
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+  # Persistent, not /tmp - mounted from the PVC below so KRaft metadata
+  # and topic data survive Pod restarts.
+  KAFKA_LOG_DIRS: /var/lib/kafka/data
+  CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+
+  # Bounded JVM heap so this stays reasonable on a dev laptop; leaves
+  # headroom under the container memory limit for off-heap/page cache use.
+  KAFKA_HEAP_OPTS: -Xms512m -Xmx512m

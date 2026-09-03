@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# RBAC and the Deployment were originally owned by cluster-agent's own
+# deploy/kubernetes/ directory; relocated here (git mv, content
+# unchanged except for the one env var patched below) so every
+# Kustomize target can reference them without crossing outside its own
+# directory tree, which kubectl's built-in kustomize refuses to load by
+# default. Only the container destination is patched here, because the
+# original manifest was written for host-run backends
+# (`host.docker.internal`) and this milestone moves the incident
+# service into the same cluster - see patch-incident-service-url.yaml.
+resources:
+  - rbac.yaml
+  - deployment.yaml
+
+patches:
+  - path: patch-incident-service-url.yaml

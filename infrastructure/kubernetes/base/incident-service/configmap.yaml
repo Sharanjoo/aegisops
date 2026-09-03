@@ -1,0 +1,17 @@
+# Non-secret runtime configuration only - matches the env vars documented
+# in services/incident-service/README.md exactly. Credentials come from
+# the aegisops-secrets Secret instead (see deployment.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: incident-service-config
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: incident-service
+    app.kubernetes.io/part-of: aegisops
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/managed-by: kustomize
+data:
+  AEGISOPS_DB_URL: jdbc:mysql://mysql:3306/aegisops?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+  AEGISOPS_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  AEGISOPS_INCIDENT_EVENTS_TOPIC: aegisops.incident.events.v1

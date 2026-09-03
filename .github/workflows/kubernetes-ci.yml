@@ -1,0 +1,90 @@
+name: Kubernetes CI
+
+on:
+  pull_request:
+    paths:
+      - "infrastructure/kubernetes/**"
+      - "infrastructure/scripts/deploy-kind.ps1"
+      - "infrastructure/scripts/verify-kind.ps1"
+      - ".github/workflows/kubernetes-ci.yml"
+
+  push:
+    branches:
+      - main
+    paths:
+      - "infrastructure/kubernetes/**"
+      - "infrastructure/scripts/deploy-kind.ps1"
+      - "infrastructure/scripts/verify-kind.ps1"
+      - ".github/workflows/kubernetes-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kubernetes-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Render and Validate Kubernetes Manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v5.1.0
+        with:
+          version: "v1.37.0" # matches the kubectl used for local kind development
+
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          curl -sSLO https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          echo "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  kubeconform-linux-amd64.tar.gz" | sha256sum -c -
+          tar -xzf kubeconform-linux-amd64.tar.gz kubeconform
+          sudo install -m 0755 kubeconform /usr/local/bin/kubeconform
+
+      - name: Verify no real local secret file is committed
+        run: |
+          set -euo pipefail
+          if git ls-files --error-unmatch infrastructure/kubernetes/overlays/kind-local/.env > /dev/null 2>&1; then
+            echo "::error::infrastructure/kubernetes/overlays/kind-local/.env is committed. It must never be tracked - only .env.example (placeholders) belongs in git."
+            exit 1
+          fi
+          echo "OK: no real local secret file is tracked."
+
+      # kubectl apply --dry-run=client still performs live API discovery
+      # against a reachable cluster (verified: it fails outright with no
+      # cluster configured), so it isn't actually usable here without
+      # standing up a cluster - which this workflow deliberately does not
+      # do. "kubectl kustomize" (pure local rendering) plus kubeconform
+      # (schema validation against a pinned Kubernetes version, entirely
+      # offline) together give the same coverage without one.
+      - name: Render and validate every staged Kustomize target
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rendered
+          for overlay in 00-namespace 10-infrastructure 20-kafka-topic-init 30-application; do
+            dir="infrastructure/kubernetes/overlays/kind-local/${overlay}"
+            echo "::group::${overlay}"
+            kubectl kustomize "${dir}" > "/tmp/rendered/${overlay}.yaml"
+            kubeconform \
+              -strict \
+              -summary \
+              -kubernetes-version 1.37.0 \
+              -ignore-missing-schemas \
+              "/tmp/rendered/${overlay}.yaml"
+            echo "::endgroup::"
+          done
+
+      - name: Validate each base component's own Kustomization independently
+        run: |
+          set -euo pipefail
+          for base in infrastructure/kubernetes/base/*/; do
+            echo "::group::${base}"
+            kubectl kustomize "${base}" > /dev/null
+            echo "::endgroup::"
+          done

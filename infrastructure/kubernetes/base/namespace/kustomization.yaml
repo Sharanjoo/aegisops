@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# This is the same Namespace every other service in this tree deploys
+# into. Originally owned by cluster-agent's own deploy/kubernetes/
+# directory; relocated here (git mv, content unchanged) so every
+# Kustomize target can reference it without crossing outside its own
+# directory tree, which kubectl's built-in kustomize refuses to load by
+# default. See services/cluster-agent/README.md for the historical path.
+resources:
+  - namespace.yaml

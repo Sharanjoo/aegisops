@@ -1,0 +1,19 @@
+# Strategic-merge patch: PodSpec's `containers[].env[]` merges by `name`,
+# so this overrides only AEGISOPS_INCIDENT_SERVICE_URL and leaves every
+# other field in deployment.yaml untouched. The base manifest's default
+# (http://host.docker.internal:8080) is correct for the agent running
+# outside the cluster against a host-run incident service; inside the
+# cluster it must use Kubernetes Service DNS instead.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-agent
+  namespace: aegisops-system
+spec:
+  template:
+    spec:
+      containers:
+        - name: cluster-agent
+          env:
+            - name: AEGISOPS_INCIDENT_SERVICE_URL
+              value: http://incident-service:8080

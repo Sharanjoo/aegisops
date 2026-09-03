@@ -1,0 +1,16 @@
+# Exact variable names the container's nginx.conf.template substitutes
+# (NGINX_ENVSUBST_FILTER=^AEGISOPS_) - see apps/dashboard/README.md's
+# Container Image section.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-config
+  namespace: aegisops-system
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/part-of: aegisops
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/managed-by: kustomize
+data:
+  AEGISOPS_INCIDENT_SERVICE_URL: http://incident-service:8080
+  AEGISOPS_REALTIME_GATEWAY_URL: http://realtime-gateway:8081
