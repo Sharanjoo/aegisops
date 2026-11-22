@@ -15,7 +15,7 @@
     "lint": "oxlint"
   },
   "keywords": [],
-  "author": "Sharan Joseph",
+  "author": "Sharan Lourduraj",
   "license": "MIT",
   "type": "module",
   "private": true,

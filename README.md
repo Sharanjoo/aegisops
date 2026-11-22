@@ -191,7 +191,7 @@ More detail, API and event contract, and the Kubernetes runbook:
 
 ## Author
 
-Sharan Joseph · [LinkedIn](https://www.linkedin.com/in/sharan-lourduraj-ba818825a/)
+Sharan Lourduraj · [LinkedIn](https://www.linkedin.com/in/sharan-lourduraj-ba818825a/)
 
 ## License
 
