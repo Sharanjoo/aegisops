@@ -545,5 +545,5 @@ above).
    manifests, and an automated kind end-to-end test **done**; Helm
    charts planned
 8. Terraform and AWS deployment — planned
-9. CI/CD, security scanning and load testing — CI exists per-service today;
+9. CI/CD, security scanning and load testing — CI runs from a single workflow (ci.yml) plus Kubernetes validation and a kind E2E workflow;
    security scanning and load testing are planned
