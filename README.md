@@ -90,7 +90,6 @@ More detail: [`docs/architecture.md`](docs/architecture.md).
 | Prometheus                      | Standard pull-based metrics; each service exposes `/metrics`.                                                |
 | GitHub Actions + Trivy          | Lint, tests, image builds and vulnerability scans on every push and PR.                                      |
 
-<!-- TODO: confirm: the "Why" column is written from what the code does, not from recorded design notes. -->
 
 ## Quick start
 
