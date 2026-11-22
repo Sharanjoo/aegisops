@@ -1,5 +1,5 @@
 interface ErrorStateProps {
-  message: string
+  message: string;
 }
 
 export function ErrorState({ message }: ErrorStateProps) {
@@ -8,5 +8,5 @@ export function ErrorState({ message }: ErrorStateProps) {
       <p>Could not load incidents.</p>
       <p className="state-panel-detail">{message}</p>
     </div>
-  )
+  );
 }

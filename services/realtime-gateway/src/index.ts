@@ -1,7 +1,4 @@
-import {
-  Kafka,
-  logLevel as kafkaLogLevel
-} from "kafkajs";
+import { Kafka, logLevel as kafkaLogLevel } from "kafkajs";
 
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
@@ -15,30 +12,28 @@ const metrics = createMetrics();
 
 const app = await buildApp(config, {
   connectionHub,
-  metrics
+  metrics,
 });
 
 const kafka = new Kafka({
   clientId: config.kafkaClientId,
   brokers: config.kafkaBrokers,
-  logLevel: kafkaLogLevel.WARN
+  logLevel: kafkaLogLevel.WARN,
 });
 
 const incidentConsumer = new IncidentEventConsumer(
   kafka.consumer({
-    groupId: config.kafkaGroupId
+    groupId: config.kafkaGroupId,
   }),
   config.incidentTopic,
   connectionHub,
   app.log,
-  metrics
+  metrics,
 );
 
 let shuttingDown = false;
 
-async function shutdown(
-  signal: NodeJS.Signals
-): Promise<void> {
+async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (shuttingDown) {
     return;
   }
@@ -47,26 +42,21 @@ async function shutdown(
 
   app.log.info(
     {
-      signal
+      signal,
     },
-    "shutdown requested"
+    "shutdown requested",
   );
 
-  const results = await Promise.allSettled([
-    incidentConsumer.stop(),
-    app.close()
-  ]);
+  const results = await Promise.allSettled([incidentConsumer.stop(), app.close()]);
 
-  const failures = results.filter(
-    (result) => result.status === "rejected"
-  );
+  const failures = results.filter((result) => result.status === "rejected");
 
   if (failures.length > 0) {
     app.log.error(
       {
-        failures
+        failures,
       },
-      "graceful shutdown failed"
+      "graceful shutdown failed",
     );
 
     process.exitCode = 1;
@@ -86,28 +76,25 @@ try {
 
   await app.listen({
     host: config.host,
-    port: config.port
+    port: config.port,
   });
 
   app.log.info(
     {
       topic: config.incidentTopic,
-      brokers: config.kafkaBrokers
+      brokers: config.kafkaBrokers,
     },
-    "realtime gateway started"
+    "realtime gateway started",
   );
 } catch (error) {
   app.log.error(
     {
-      error
+      error,
     },
-    "realtime gateway failed to start"
+    "realtime gateway failed to start",
   );
 
-  await Promise.allSettled([
-    incidentConsumer.stop(),
-    app.close()
-  ]);
+  await Promise.allSettled([incidentConsumer.stop(), app.close()]);
 
   process.exitCode = 1;
 }

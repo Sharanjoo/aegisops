@@ -30,11 +30,15 @@
   --connection-disconnected: #6b7280;
 
   color-scheme: light dark;
-  font: 15px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif;
+  font:
+    15px/1.5 system-ui,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
+  :root:not([data-theme="light"]) {
     --bg: #0f1115;
     --surface: #171a21;
     --border: #2c3038;

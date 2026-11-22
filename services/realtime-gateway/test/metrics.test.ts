@@ -12,7 +12,7 @@ const testConfig: AppConfig = {
   kafkaBrokers: ["localhost:9092"],
   kafkaClientId: "realtime-gateway-test",
   kafkaGroupId: "realtime-gateway-test",
-  incidentTopic: "aegisops.incident.events.v1"
+  incidentTopic: "aegisops.incident.events.v1",
 };
 
 describe("metrics endpoint", () => {
@@ -28,21 +28,17 @@ describe("metrics endpoint", () => {
 
     app = await buildApp(testConfig, {
       logger: false,
-      metrics
+      metrics,
     });
 
     const response = await app.inject({
       method: "GET",
-      url: "/metrics"
+      url: "/metrics",
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.headers["content-type"]).toBe(
-      metrics.registry.contentType
-    );
-    expect(response.body).toContain(
-      "aegisops_realtime_gateway_websocket_clients"
-    );
+    expect(response.headers["content-type"]).toBe(metrics.registry.contentType);
+    expect(response.body).toContain("aegisops_realtime_gateway_websocket_clients");
   });
 
   it("does not throw when two apps are built in the same process", async () => {
@@ -69,7 +65,7 @@ describe("createMetrics", () => {
 
     app = await buildApp(testConfig, {
       logger: false,
-      metrics
+      metrics,
     });
 
     await app.ready();
@@ -93,39 +89,32 @@ describe("createMetrics", () => {
     const metrics = createMetrics();
 
     metrics.kafkaEventsConsumed.inc({
-      event_type: "INCIDENT_CREATED"
+      event_type: "INCIDENT_CREATED",
     });
     metrics.kafkaMessagesRejected.inc({
-      reason: "invalid_payload"
+      reason: "invalid_payload",
     });
     metrics.websocketBroadcastAttempts.inc();
     metrics.websocketDeliveries.inc(3);
 
-    const [consumed, rejected, attempts, deliveries] =
-      await Promise.all([
-        metrics.kafkaEventsConsumed.get(),
-        metrics.kafkaMessagesRejected.get(),
-        metrics.websocketBroadcastAttempts.get(),
-        metrics.websocketDeliveries.get()
-      ]);
+    const [consumed, rejected, attempts, deliveries] = await Promise.all([
+      metrics.kafkaEventsConsumed.get(),
+      metrics.kafkaMessagesRejected.get(),
+      metrics.websocketBroadcastAttempts.get(),
+      metrics.websocketDeliveries.get(),
+    ]);
 
     // Both event types/reasons are pre-registered at 0 (see metrics.ts),
     // so find the specific label combination rather than assuming index 0.
     expect(
-      consumed.values.find(
-        (value) => value.labels.event_type === "INCIDENT_CREATED"
-      )?.value
+      consumed.values.find((value) => value.labels.event_type === "INCIDENT_CREATED")?.value,
     ).toBe(1);
     expect(
-      consumed.values.find(
-        (value) => value.labels.event_type === "INCIDENT_STATUS_CHANGED"
-      )?.value
+      consumed.values.find((value) => value.labels.event_type === "INCIDENT_STATUS_CHANGED")?.value,
     ).toBe(0);
-    expect(
-      rejected.values.find(
-        (value) => value.labels.reason === "invalid_payload"
-      )?.value
-    ).toBe(1);
+    expect(rejected.values.find((value) => value.labels.reason === "invalid_payload")?.value).toBe(
+      1,
+    );
     expect(attempts.values[0]?.value).toBe(1);
     expect(deliveries.values[0]?.value).toBe(3);
   });

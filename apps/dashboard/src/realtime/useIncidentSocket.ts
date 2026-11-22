@@ -1,38 +1,34 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from "react";
 
-import { parseIncidentEvent } from './validateIncidentEvent'
-import type { IncidentRealtimeEvent } from '../types/incident'
+import { parseIncidentEvent } from "./validateIncidentEvent";
+import type { IncidentRealtimeEvent } from "../types/incident";
 
-export type ConnectionState =
-  | 'connecting'
-  | 'live'
-  | 'reconnecting'
-  | 'disconnected'
+export type ConnectionState = "connecting" | "live" | "reconnecting" | "disconnected";
 
 export interface SocketOpenInfo {
   /** True when this connection followed a prior disconnect, false for the first-ever connect. */
-  isReconnect: boolean
+  isReconnect: boolean;
 }
 
-const INITIAL_RETRY_DELAY_MS = 1000
-const MAX_RETRY_DELAY_MS = 30_000
-const BACKOFF_FACTOR = 2
+const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 30_000;
+const BACKOFF_FACTOR = 2;
 
 /** Delay before the Nth reconnect attempt (attempt is 1-indexed), capped exponential backoff. */
 export function computeRetryDelayMs(attempt: number): number {
-  const delay = INITIAL_RETRY_DELAY_MS * BACKOFF_FACTOR ** (attempt - 1)
-  return Math.min(delay, MAX_RETRY_DELAY_MS)
+  const delay = INITIAL_RETRY_DELAY_MS * BACKOFF_FACTOR ** (attempt - 1);
+  return Math.min(delay, MAX_RETRY_DELAY_MS);
 }
 
 export interface UseIncidentSocketOptions {
   /** Overridable for tests; defaults to the browser's global WebSocket. */
-  webSocketFactory?: (url: string) => WebSocket
+  webSocketFactory?: (url: string) => WebSocket;
   /**
    * Called whenever the socket becomes live, distinguishing the first
    * connection from a reconnect - orchestration uses this to refresh the
    * REST snapshot only after a reconnect, not on first connect.
    */
-  onOpen?: (info: SocketOpenInfo) => void
+  onOpen?: (info: SocketOpenInfo) => void;
 }
 
 /**
@@ -47,95 +43,95 @@ export function useIncidentSocket(
   onEvent: (event: IncidentRealtimeEvent) => void,
   options: UseIncidentSocketOptions = {},
 ): ConnectionState {
-  const [connectionState, setConnectionState] =
-    useState<ConnectionState>('connecting')
+  const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
 
-  const onEventRef = useRef(onEvent)
-  const onOpenRef = useRef(options.onOpen)
-  const webSocketFactoryRef = useRef(options.webSocketFactory)
-
-  useEffect(() => {
-    onEventRef.current = onEvent
-    onOpenRef.current = options.onOpen
-    webSocketFactoryRef.current = options.webSocketFactory
-  })
+  const onEventRef = useRef(onEvent);
+  const onOpenRef = useRef(options.onOpen);
+  const webSocketFactoryRef = useRef(options.webSocketFactory);
 
   useEffect(() => {
-    let cancelled = false
-    let socket: WebSocket | undefined
-    let retryTimeout: ReturnType<typeof setTimeout> | undefined
-    let attempt = 0
+    onEventRef.current = onEvent;
+    onOpenRef.current = options.onOpen;
+    webSocketFactoryRef.current = options.webSocketFactory;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    let socket: WebSocket | undefined;
+    let retryTimeout: ReturnType<typeof setTimeout> | undefined;
+    let attempt = 0;
 
     function connect() {
       if (cancelled) {
-        return
+        return;
       }
 
-      const isReconnectAttempt = attempt > 0
-      setConnectionState(isReconnectAttempt ? 'reconnecting' : 'connecting')
+      const isReconnectAttempt = attempt > 0;
+      setConnectionState(isReconnectAttempt ? "reconnecting" : "connecting");
 
-      const createSocket = webSocketFactoryRef.current ?? ((target: string) => new WebSocket(target))
-      socket = createSocket(url)
+      const createSocket =
+        webSocketFactoryRef.current ?? ((target: string) => new WebSocket(target));
+      socket = createSocket(url);
       // A socket failure fires both "error" and "close" (error first). This
       // flag ensures the pair only triggers one reconnect attempt.
-      let settled = false
+      let settled = false;
 
-      socket.addEventListener('open', () => {
+      socket.addEventListener("open", () => {
         if (cancelled) {
-          return
+          return;
         }
-        attempt = 0
-        setConnectionState('live')
-        onOpenRef.current?.({ isReconnect: isReconnectAttempt })
-      })
+        attempt = 0;
+        setConnectionState("live");
+        onOpenRef.current?.({ isReconnect: isReconnectAttempt });
+      });
 
-      socket.addEventListener('message', (messageEvent: MessageEvent) => {
-        if (cancelled || typeof messageEvent.data !== 'string') {
-          return
+      socket.addEventListener("message", (messageEvent: MessageEvent) => {
+        if (cancelled || typeof messageEvent.data !== "string") {
+          return;
         }
-        const event = parseIncidentEvent(messageEvent.data)
+        const event = parseIncidentEvent(messageEvent.data);
         if (event) {
-          onEventRef.current(event)
+          onEventRef.current(event);
         }
-      })
+      });
 
       const handleDisconnect = () => {
         if (settled) {
-          return
+          return;
         }
-        settled = true
-        scheduleReconnect()
-      }
+        settled = true;
+        scheduleReconnect();
+      };
 
-      socket.addEventListener('close', handleDisconnect)
-      socket.addEventListener('error', handleDisconnect)
+      socket.addEventListener("close", handleDisconnect);
+      socket.addEventListener("error", handleDisconnect);
     }
 
     function scheduleReconnect() {
       if (cancelled) {
-        return
+        return;
       }
 
-      setConnectionState('disconnected')
-      attempt += 1
-      const delay = computeRetryDelayMs(attempt)
-      retryTimeout = setTimeout(connect, delay)
+      setConnectionState("disconnected");
+      attempt += 1;
+      const delay = computeRetryDelayMs(attempt);
+      retryTimeout = setTimeout(connect, delay);
     }
 
-    connect()
+    connect();
 
     return () => {
-      cancelled = true
+      cancelled = true;
       if (retryTimeout !== undefined) {
-        clearTimeout(retryTimeout)
+        clearTimeout(retryTimeout);
       }
       // No need to remove the close/error listeners individually: both
       // scheduleReconnect and handleDisconnect check `cancelled` (or, for
       // handleDisconnect, are scoped to a socket about to be discarded)
       // before doing anything, so closing here is sufficient.
-      socket?.close()
-    }
-  }, [url])
+      socket?.close();
+    };
+  }, [url]);
 
-  return connectionState
+  return connectionState;
 }

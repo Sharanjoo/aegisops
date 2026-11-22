@@ -44,10 +44,10 @@ Kubernetes failure
 
 ## Endpoints
 
-| Endpoint | Protocol | Purpose |
-|---|---|---|
-| `/health` | HTTP | Container and service health check |
-| `/ws/incidents` | WebSocket | Incident lifecycle event stream |
+| Endpoint        | Protocol  | Purpose                            |
+| --------------- | --------- | ---------------------------------- |
+| `/health`       | HTTP      | Container and service health check |
+| `/ws/incidents` | WebSocket | Incident lifecycle event stream    |
 
 Example health response:
 
@@ -98,15 +98,15 @@ Example event:
 
 ## Configuration
 
-| Environment variable | Default | Purpose |
-|---|---|---|
-| `AEGISOPS_GATEWAY_HOST` | `0.0.0.0` | HTTP and WebSocket bind address |
-| `AEGISOPS_GATEWAY_PORT` | `8081` | Gateway listening port |
-| `AEGISOPS_LOG_LEVEL` | `info` | Structured logging level |
-| `AEGISOPS_KAFKA_BROKERS` | `localhost:9092` | Comma-separated Kafka brokers |
-| `AEGISOPS_KAFKA_CLIENT_ID` | `aegisops-realtime-gateway` | Kafka client identifier |
-| `AEGISOPS_KAFKA_GROUP_ID` | `aegisops-realtime-gateway-v1` | Kafka consumer group |
-| `AEGISOPS_INCIDENT_TOPIC` | `aegisops.incident.events.v1` | Incident event topic |
+| Environment variable       | Default                        | Purpose                         |
+| -------------------------- | ------------------------------ | ------------------------------- |
+| `AEGISOPS_GATEWAY_HOST`    | `0.0.0.0`                      | HTTP and WebSocket bind address |
+| `AEGISOPS_GATEWAY_PORT`    | `8081`                         | Gateway listening port          |
+| `AEGISOPS_LOG_LEVEL`       | `info`                         | Structured logging level        |
+| `AEGISOPS_KAFKA_BROKERS`   | `localhost:9092`               | Comma-separated Kafka brokers   |
+| `AEGISOPS_KAFKA_CLIENT_ID` | `aegisops-realtime-gateway`    | Kafka client identifier         |
+| `AEGISOPS_KAFKA_GROUP_ID`  | `aegisops-realtime-gateway-v1` | Kafka consumer group            |
+| `AEGISOPS_INCIDENT_TOPIC`  | `aegisops.incident.events.v1`  | Incident event topic            |
 
 ## Local Development
 

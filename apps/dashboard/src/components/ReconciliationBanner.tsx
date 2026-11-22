@@ -1,6 +1,6 @@
 interface ReconciliationBannerProps {
-  error: string | null
-  onRetry: () => void
+  error: string | null;
+  onRetry: () => void;
 }
 
 /**
@@ -11,7 +11,7 @@ interface ReconciliationBannerProps {
  */
 export function ReconciliationBanner({ error, onRetry }: ReconciliationBannerProps) {
   if (!error) {
-    return null
+    return null;
   }
 
   return (
@@ -21,5 +21,5 @@ export function ReconciliationBanner({ error, onRetry }: ReconciliationBannerPro
         Retry
       </button>
     </div>
-  )
+  );
 }

@@ -14,7 +14,7 @@ const testConfig: AppConfig = {
   kafkaBrokers: ["localhost:9092"],
   kafkaClientId: "realtime-gateway-test",
   kafkaGroupId: "realtime-gateway-test",
-  incidentTopic: "aegisops.incident.events.v1"
+  incidentTopic: "aegisops.incident.events.v1",
 };
 
 describe("incident WebSocket endpoint", () => {
@@ -30,7 +30,7 @@ describe("incident WebSocket endpoint", () => {
 
     app = await buildApp(testConfig, {
       logger: false,
-      connectionHub
+      connectionHub,
     });
 
     await app.ready();
@@ -42,7 +42,7 @@ describe("incident WebSocket endpoint", () => {
     const event = {
       eventType: "incident.created",
       incidentId: "incident-test-1",
-      status: "OPEN"
+      status: "OPEN",
     };
 
     const receivedMessage = once(client, "message");
@@ -59,12 +59,9 @@ describe("incident WebSocket endpoint", () => {
     await closed;
 
     await expect
-      .poll(
-        () => connectionHub.size,
-        {
-          timeout: 2_000
-        }
-      )
+      .poll(() => connectionHub.size, {
+        timeout: 2_000,
+      })
       .toBe(0);
   });
 });

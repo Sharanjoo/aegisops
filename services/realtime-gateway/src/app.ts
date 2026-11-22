@@ -13,32 +13,31 @@ export interface BuildAppOptions {
 
 export async function buildApp(
   config: AppConfig,
-  options: BuildAppOptions = {}
+  options: BuildAppOptions = {},
 ): Promise<FastifyInstance> {
   const app =
     options.logger === false
       ? Fastify({ logger: false })
       : Fastify({
           logger: {
-            level: config.logLevel
-          }
+            level: config.logLevel,
+          },
         });
 
-  const connectionHub =
-    options.connectionHub ?? new ConnectionHub();
+  const connectionHub = options.connectionHub ?? new ConnectionHub();
   const metrics = options.metrics ?? createMetrics();
 
   await app.register(websocket, {
     options: {
       maxPayload: 1_048_576,
-      perMessageDeflate: false
-    }
+      perMessageDeflate: false,
+    },
   });
 
   app.get("/health", async () => {
     return {
       status: "UP",
-      service: "realtime-gateway"
+      service: "realtime-gateway",
     };
   });
 
@@ -50,7 +49,7 @@ export async function buildApp(
   app.get(
     "/ws/incidents",
     {
-      websocket: true
+      websocket: true,
     },
     (socket, request) => {
       connectionHub.add(socket);
@@ -59,9 +58,9 @@ export async function buildApp(
       app.log.info(
         {
           clientCount: connectionHub.size,
-          remoteAddress: request.ip
+          remoteAddress: request.ip,
         },
-        "WebSocket client connected"
+        "WebSocket client connected",
       );
 
       socket.once("close", () => {
@@ -69,9 +68,9 @@ export async function buildApp(
 
         app.log.info(
           {
-            clientCount: connectionHub.size
+            clientCount: connectionHub.size,
           },
-          "WebSocket client disconnected"
+          "WebSocket client disconnected",
         );
       });
 
@@ -81,12 +80,12 @@ export async function buildApp(
         app.log.warn(
           {
             error,
-            clientCount: connectionHub.size
+            clientCount: connectionHub.size,
           },
-          "WebSocket client error"
+          "WebSocket client error",
         );
       });
-    }
+    },
   );
 
   return app;

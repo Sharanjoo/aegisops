@@ -1,23 +1,23 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState } from "react";
 
-import { EmptyState } from './components/EmptyState'
-import { ErrorState } from './components/ErrorState'
-import { FiltersBar } from './components/FiltersBar'
-import { Header } from './components/Header'
-import { IncidentTable } from './components/IncidentTable'
-import { LoadingState } from './components/LoadingState'
-import { ReconciliationBanner } from './components/ReconciliationBanner'
-import { SummaryCards } from './components/SummaryCards'
-import { WebSocketBanner } from './components/WebSocketBanner'
-import { loadEnv } from './config/env'
+import { EmptyState } from "./components/EmptyState";
+import { ErrorState } from "./components/ErrorState";
+import { FiltersBar } from "./components/FiltersBar";
+import { Header } from "./components/Header";
+import { IncidentTable } from "./components/IncidentTable";
+import { LoadingState } from "./components/LoadingState";
+import { ReconciliationBanner } from "./components/ReconciliationBanner";
+import { SummaryCards } from "./components/SummaryCards";
+import { WebSocketBanner } from "./components/WebSocketBanner";
+import { loadEnv } from "./config/env";
 import {
   DEFAULT_INCIDENT_FILTERS,
   filterIncidents,
   type IncidentFilters,
-} from './state/filterIncidents'
-import { useIncidentDashboard } from './state/useIncidentDashboard'
+} from "./state/filterIncidents";
+import { useIncidentDashboard } from "./state/useIncidentDashboard";
 
-const env = loadEnv()
+const env = loadEnv();
 
 function App() {
   const {
@@ -27,21 +27,17 @@ function App() {
     connectionState,
     reconciliationError,
     retryReconciliation,
-  } = useIncidentDashboard(env.incidentApiBaseUrl, env.realtimeWsUrl)
+  } = useIncidentDashboard(env.incidentApiBaseUrl, env.realtimeWsUrl);
 
-  const [filters, setFilters] = useState<IncidentFilters>(
-    DEFAULT_INCIDENT_FILTERS,
-  )
+  const [filters, setFilters] = useState<IncidentFilters>(DEFAULT_INCIDENT_FILTERS);
 
   const filteredIncidents = useMemo(
     () => filterIncidents(incidents, filters),
     [incidents, filters],
-  )
+  );
 
   const hasActiveFilters =
-    filters.search.trim().length > 0 ||
-    filters.status !== 'ALL' ||
-    filters.severity !== 'ALL'
+    filters.search.trim().length > 0 || filters.status !== "ALL" || filters.severity !== "ALL";
 
   return (
     <div className="app-shell">
@@ -52,20 +48,15 @@ function App() {
 
         <WebSocketBanner state={connectionState} />
 
-        <ReconciliationBanner
-          error={reconciliationError}
-          onRetry={retryReconciliation}
-        />
+        <ReconciliationBanner error={reconciliationError} onRetry={retryReconciliation} />
 
         <FiltersBar filters={filters} onChange={setFilters} />
 
-        {snapshotStatus === 'loading' && <LoadingState />}
+        {snapshotStatus === "loading" && <LoadingState />}
 
-        {snapshotStatus === 'error' && (
-          <ErrorState message={snapshotError ?? 'Unknown error'} />
-        )}
+        {snapshotStatus === "error" && <ErrorState message={snapshotError ?? "Unknown error"} />}
 
-        {snapshotStatus === 'ready' &&
+        {snapshotStatus === "ready" &&
           (filteredIncidents.length === 0 ? (
             <EmptyState hasFilters={hasActiveFilters} />
           ) : (
@@ -73,7 +64,7 @@ function App() {
           ))}
       </main>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

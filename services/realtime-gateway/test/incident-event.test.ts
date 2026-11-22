@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  parseIncidentEvent
-} from "../src/kafka/incident-event.js";
+import { parseIncidentEvent } from "../src/kafka/incident-event.js";
 
 const validEvent = {
   eventId: "531bb2bd-5d6f-49c8-8348-455d8fcbe43a",
@@ -13,22 +11,18 @@ const validEvent = {
   serviceName: "cluster-agent-demo",
   severity: "HIGH",
   status: "OPEN",
-  previousStatus: null
+  previousStatus: null,
 };
 
 describe("incident event parser", () => {
   it("parses a valid version-one incident event", () => {
-    const result = parseIncidentEvent(
-      JSON.stringify(validEvent)
-    );
+    const result = parseIncidentEvent(JSON.stringify(validEvent));
 
     expect(result).toEqual(validEvent);
   });
 
   it("rejects malformed JSON", () => {
-    expect(() => parseIncidentEvent("{invalid")).toThrow(
-      "Kafka message contains invalid JSON"
-    );
+    expect(() => parseIncidentEvent("{invalid")).toThrow("Kafka message contains invalid JSON");
   });
 
   it("rejects an unsupported event version", () => {
@@ -36,9 +30,9 @@ describe("incident event parser", () => {
       parseIncidentEvent(
         JSON.stringify({
           ...validEvent,
-          eventVersion: 2
-        })
-      )
+          eventVersion: 2,
+        }),
+      ),
     ).toThrow();
   });
 
@@ -47,9 +41,9 @@ describe("incident event parser", () => {
       parseIncidentEvent(
         JSON.stringify({
           ...validEvent,
-          eventType: "INCIDENT_DELETED"
-        })
-      )
+          eventType: "INCIDENT_DELETED",
+        }),
+      ),
     ).toThrow();
   });
 });

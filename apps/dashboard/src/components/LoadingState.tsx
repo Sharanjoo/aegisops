@@ -3,5 +3,5 @@ export function LoadingState() {
     <output className="state-panel">
       <p>Loading incidents…</p>
     </output>
-  )
+  );
 }

@@ -1,17 +1,17 @@
-import type { ConnectionState } from '../realtime/useIncidentSocket'
+import type { ConnectionState } from "../realtime/useIncidentSocket";
 
 const MESSAGES: Partial<Record<ConnectionState, string>> = {
-  reconnecting: 'Live updates interrupted — reconnecting…',
-  disconnected: 'Live updates unavailable — retrying shortly.',
-}
+  reconnecting: "Live updates interrupted — reconnecting…",
+  disconnected: "Live updates unavailable — retrying shortly.",
+};
 
 /** Shown only while the realtime connection is not live, so the operator knows the list may be stale. */
 export function WebSocketBanner({ state }: { state: ConnectionState }) {
-  const message = MESSAGES[state]
+  const message = MESSAGES[state];
 
   if (!message) {
-    return null
+    return null;
   }
 
-  return <output className="websocket-banner">{message}</output>
+  return <output className="websocket-banner">{message}</output>;
 }
