@@ -3,7 +3,7 @@ name: E2E Kind CI
 # Builds every application image, deploys the full stack into an ephemeral
 # kind cluster (created fresh in this job and always torn down), then runs
 # verify-kind.ps1 and the automated E2E test against it. Unit tests are
-# already covered by each service's own CI workflow - this job does not
+# already covered by ci.yml - this job does not
 # repeat them, only what an isolated cluster deployment actually needs.
 on:
   pull_request:

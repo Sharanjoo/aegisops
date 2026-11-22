@@ -29,6 +29,10 @@ jobs:
         with:
           go-version-file: services/cluster-agent/go.mod
           cache-dependency-path: services/cluster-agent/go.sum
+      - name: Verify go.mod and go.sum are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
       - name: gofmt
         run: |
           unformatted="$(gofmt -l .)"
@@ -37,7 +41,7 @@ jobs:
       - run: go test -race ./...
 
   typescript:
-    name: ${{ matrix.project }} - format, lint, typecheck, test
+    name: ${{ matrix.project }} - audit, format, lint, typecheck, test, build
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -54,10 +58,13 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ matrix.project }}/package-lock.json
       - run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: npm run build
 
   incident-service:
     name: Incident service - Maven tests
