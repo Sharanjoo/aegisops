@@ -23,11 +23,9 @@ quickly. AegisOps builds that foundation first.
 
 ![AegisOps demo](docs/demo.gif)
 
-<!-- TODO: record docs/demo.gif -->
-
-The GIF should show: a pod entering `CrashLoopBackOff`, the Go agent creating an incident,
-and the incident appearing live in the dashboard without a page refresh. A step-by-step
-version is in [`docs/demo.md`](docs/demo.md).
+The dashboard picks up a new incident live, without a page refresh, after a pod is made to
+crash-loop (the Go agent detects it and the incident flows through the pipeline behind the
+scenes). A step-by-step version is in [`docs/demo.md`](docs/demo.md).
 
 ## Architecture
 
