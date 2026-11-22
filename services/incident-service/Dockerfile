@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- Build stage: compiles the executable jar with the Maven wrapper ----
-FROM eclipse-temurin:21.0.9_10-jdk-alpine AS build
+FROM eclipse-temurin:21.0.13.1_2-jdk-alpine AS build
 
 WORKDIR /src
 
@@ -14,7 +14,7 @@ RUN ./mvnw --batch-mode clean package -DskipTests
 
 
 # ---- Runtime stage: JRE only, non-root, just the built jar ----
-FROM eclipse-temurin:21.0.9_10-jre-alpine AS runtime
+FROM eclipse-temurin:21.0.13.1_2-jre-alpine AS runtime
 
 RUN addgroup -S aegisops \
     && adduser -S aegisops -G aegisops

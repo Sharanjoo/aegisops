@@ -19,14 +19,14 @@ Incident service REST API (GET /api/v1/incidents)
 ```
 
 REST is the only source of displayable incident data; the WebSocket is
-only ever a *notification* channel:
+only ever a _notification_ channel:
 
 - **REST** (`services/incident-service`) is the source of truth for every
   incident field. `GET /api/v1/incidents` loads the initial snapshot, and
   `GET /api/v1/incidents/{incidentId}` is what actually populates or
   updates a row - always, for both event types.
-- **WebSocket** (`services/realtime-gateway`) only pushes compact *change
-  notifications* - `eventId`, `eventType`, `incidentId` and a few other
+- **WebSocket** (`services/realtime-gateway`) only pushes compact _change
+  notifications_ - `eventId`, `eventType`, `incidentId` and a few other
   fields (see `types/incident.ts`), never the fields a row needs to
   display. Every valid notification triggers a detail fetch; the
   notification's own fields are never written into dashboard state. See
@@ -35,15 +35,15 @@ only ever a *notification* channel:
 
 Code is split by responsibility:
 
-| Concern | Location |
-|---|---|
-| REST client + response validation | `src/api/incidentApi.ts` |
-| WebSocket lifecycle + backoff | `src/realtime/useIncidentSocket.ts` |
-| Event schema validation | `src/realtime/validateIncidentEvent.ts` |
-| State reconciliation (dedup, timestamp-aware upsert) | `src/state/incidentsReducer.ts` |
-| Search/filter logic | `src/state/filterIncidents.ts` |
-| Snapshot + socket orchestration, hydration, retry | `src/state/useIncidentDashboard.ts` |
-| Presentational components | `src/components/` |
+| Concern                                              | Location                                |
+| ---------------------------------------------------- | --------------------------------------- |
+| REST client + response validation                    | `src/api/incidentApi.ts`                |
+| WebSocket lifecycle + backoff                        | `src/realtime/useIncidentSocket.ts`     |
+| Event schema validation                              | `src/realtime/validateIncidentEvent.ts` |
+| State reconciliation (dedup, timestamp-aware upsert) | `src/state/incidentsReducer.ts`         |
+| Search/filter logic                                  | `src/state/filterIncidents.ts`          |
+| Snapshot + socket orchestration, hydration, retry    | `src/state/useIncidentDashboard.ts`     |
+| Presentational components                            | `src/components/`                       |
 
 ### Event reconciliation model
 
@@ -141,10 +141,10 @@ The header shows one of four states, driven by `useIncidentSocket`:
 compiled bundle - they cannot change after the app is built. Their default
 depends on the build mode:
 
-| Variable | Dev default (`npm run dev`) | Production build default (`npm run build`, and the container image) |
-|---|---|---|
-| `VITE_INCIDENT_API_BASE_URL` | `http://localhost:8080` | `` (empty - same origin) |
-| `VITE_REALTIME_WS_URL` | `ws://localhost:8081/ws/incidents` | `/ws/incidents` (same origin) |
+| Variable                     | Dev default (`npm run dev`)        | Production build default (`npm run build`, and the container image) |
+| ---------------------------- | ---------------------------------- | ------------------------------------------------------------------- |
+| `VITE_INCIDENT_API_BASE_URL` | `http://localhost:8080`            | `` (empty - same origin)                                            |
+| `VITE_REALTIME_WS_URL`       | `ws://localhost:8081/ws/incidents` | `/ws/incidents` (same origin)                                       |
 
 In development there is no reverse proxy in front of Vite's dev server, so
 the defaults point straight at the services' documented local ports.
@@ -153,8 +153,9 @@ means the compiled bundle never has a specific host baked in, so the same
 build works behind any origin. The container image's nginx runtime fills
 that role: it serves the bundle and reverse-proxies `/api/*` and
 `/ws/incidents` to whichever backends its own environment variables name
+
 - see **Container Image** below. Copy `.env.example` to `.env` to override
-either variable for local development; `.env` is git-ignored.
+  either variable for local development; `.env` is git-ignored.
 
 ```powershell
 Copy-Item .env.example .env
@@ -162,8 +163,7 @@ Copy-Item .env.example .env
 
 ## Local startup
 
-Requires the incident service (port 8080) and realtime gateway (port
-8081) running, which in turn require MySQL and Kafka
+Requires the incident service (port 8080) and realtime gateway (port 8081) running, which in turn require MySQL and Kafka
 (`infrastructure/local/compose.yaml`) - see the root `docs/architecture.md`
 and each service's own README for how to start them.
 
@@ -187,8 +187,8 @@ npm run build       # tsc -b && vite build
 ## Expected backend dependencies
 
 - **Incident service** (`services/incident-service`, port 8080): `GET
-  /api/v1/incidents` for the snapshot and `GET
-  /api/v1/incidents/{incidentId}` to hydrate each WebSocket notification.
+/api/v1/incidents` for the snapshot and `GET
+/api/v1/incidents/{incidentId}` to hydrate each WebSocket notification.
   See `IncidentController` and the `Incident` domain record for the
   authoritative response shape.
 - **Realtime gateway** (`services/realtime-gateway`, port 8081): `/ws/incidents`
@@ -206,9 +206,9 @@ not otherwise restrict connections by origin.
 
 ## Container Image
 
-`Dockerfile` is a multi-stage build: `node:22.23.2-alpine3.23` installs
+`Dockerfile` is a multi-stage build: `node:22.23.5-alpine3.23` installs
 with `npm ci` and runs `npm run build`, and only the compiled
-`dist/` output is copied into an `nginxinc/nginx-unprivileged:1.29-alpine`
+`dist/` output is copied into an `nginxinc/nginx-unprivileged:1.31.7-alpine`
 runtime stage - no Node.js, no source, no dev dependencies, no test files
 in the final image. That image already runs as a non-root user and
 listens on the unprivileged port 8080.
@@ -222,12 +222,12 @@ templating at container start (`nginx.conf.template`,
 substituted - everything else, including nginx's own `$host`-style
 variables, is left alone):
 
-| Route | Proxied to | Variable |
-|---|---|---|
-| `/api/*` | Incident service | `AEGISOPS_INCIDENT_SERVICE_URL` (default `http://incident-service:8080`) |
+| Route           | Proxied to                                  | Variable                                                                 |
+| --------------- | ------------------------------------------- | ------------------------------------------------------------------------ |
+| `/api/*`        | Incident service                            | `AEGISOPS_INCIDENT_SERVICE_URL` (default `http://incident-service:8080`) |
 | `/ws/incidents` | Realtime gateway, upgrade headers preserved | `AEGISOPS_REALTIME_GATEWAY_URL` (default `http://realtime-gateway:8081`) |
-| everything else | `index.html` (SPA fallback) | n/a |
-| `/health` | `200 OK` plain text | n/a |
+| everything else | `index.html` (SPA fallback)                 | n/a                                                                      |
+| `/health`       | `200 OK` plain text                         | n/a                                                                      |
 
 The browser only ever talks to the dashboard's own origin - it never
 connects to `incident-service` or `realtime-gateway` directly, which

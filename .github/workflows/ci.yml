@@ -1,0 +1,104 @@
+name: CI
+
+# Single entry point for the repository: lint + tests for every component,
+# a Docker build per image, and a Trivy scan of each built image. The
+# per-component workflows alongside this one remain path-filtered; this one
+# always runs so the README badge reflects the whole repository.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-agent:
+    name: Go agent - fmt, vet, test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/cluster-agent
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: services/cluster-agent/go.mod
+          cache-dependency-path: services/cluster-agent/go.sum
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [[ -n "${unformatted}" ]]; then echo "${unformatted}"; exit 1; fi
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  typescript:
+    name: ${{ matrix.project }} - format, lint, typecheck, test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [services/realtime-gateway, apps/dashboard]
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ${{ matrix.project }}/.nvmrc
+          cache: npm
+          cache-dependency-path: ${{ matrix.project }}/package-lock.json
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+  incident-service:
+    name: Incident service - Maven tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: services/incident-service/pom.xml
+      - name: Run tests (Testcontainers needs Docker, present on the runner)
+        working-directory: services/incident-service
+        run: |
+          chmod +x mvnw
+          ./mvnw --batch-mode clean test
+
+  image:
+    name: Docker build + Trivy - ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: cluster-agent
+            context: services/cluster-agent
+          - image: incident-service
+            context: services/incident-service
+          - image: realtime-gateway
+            context: services/realtime-gateway
+          - image: dashboard
+            context: apps/dashboard
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build image
+        run: docker build --tag aegisops/${{ matrix.image }}:ci ${{ matrix.context }}
+      - name: Trivy scan (HIGH/CRITICAL, fixable only)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: aegisops/${{ matrix.image }}:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"

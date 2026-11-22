@@ -1,11 +1,11 @@
-import type { ConnectionState } from '../realtime/useIncidentSocket'
+import type { ConnectionState } from "../realtime/useIncidentSocket";
 
 const LABELS: Record<ConnectionState, string> = {
-  connecting: 'Connecting…',
-  live: 'Live',
-  reconnecting: 'Reconnecting…',
-  disconnected: 'Disconnected',
-}
+  connecting: "Connecting…",
+  live: "Live",
+  reconnecting: "Reconnecting…",
+  disconnected: "Disconnected",
+};
 
 export function ConnectionBadge({ state }: { state: ConnectionState }) {
   return (
@@ -13,5 +13,5 @@ export function ConnectionBadge({ state }: { state: ConnectionState }) {
       <span className="connection-dot" aria-hidden="true" />
       {LABELS[state]}
     </output>
-  )
+  );
 }

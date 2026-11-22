@@ -1,5 +1,5 @@
 interface EmptyStateProps {
-  hasFilters: boolean
+  hasFilters: boolean;
 }
 
 export function EmptyState({ hasFilters }: EmptyStateProps) {
@@ -7,9 +7,9 @@ export function EmptyState({ hasFilters }: EmptyStateProps) {
     <div className="state-panel">
       <p>
         {hasFilters
-          ? 'No incidents match the current filters.'
-          : 'No incidents reported. All systems nominal.'}
+          ? "No incidents match the current filters."
+          : "No incidents reported. All systems nominal."}
       </p>
     </div>
-  )
+  );
 }

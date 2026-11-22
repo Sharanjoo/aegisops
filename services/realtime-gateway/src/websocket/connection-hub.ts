@@ -35,10 +35,7 @@ export class ConnectionHub {
         continue;
       }
 
-      if (
-        client.readyState === WebSocket.CLOSING ||
-        client.readyState === WebSocket.CLOSED
-      ) {
+      if (client.readyState === WebSocket.CLOSING || client.readyState === WebSocket.CLOSED) {
         this.clients.delete(client);
       }
     }

@@ -1,4 +1,4 @@
-FROM node:22.23.2-alpine3.23 AS dependencies
+FROM node:22.23.5-alpine3.23 AS dependencies
 
 WORKDIR /app
 
@@ -16,9 +16,16 @@ RUN npm run build \
     && npm prune --omit=dev
 
 
-FROM node:22.23.2-alpine3.23 AS runtime
+FROM node:22.23.5-alpine3.23 AS runtime
 
 ENV NODE_ENV=production
+
+# Runtime only needs `node`: apply pending Alpine patches and remove the
+# bundled npm/corepack, which are never used here and carry their own CVEs.
+RUN apk upgrade --no-cache && \
+    rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 WORKDIR /app
 

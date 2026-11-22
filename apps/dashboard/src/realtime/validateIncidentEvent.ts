@@ -1,25 +1,21 @@
-import {
-  INCIDENT_EVENT_TYPES,
-  type IncidentRealtimeEvent,
-} from '../types/incident'
+import { INCIDENT_EVENT_TYPES, type IncidentRealtimeEvent } from "../types/incident";
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
+  return typeof value === "string" && value.length > 0;
 }
 
 function isUuid(value: unknown): value is string {
-  return typeof value === 'string' && UUID_PATTERN.test(value)
+  return typeof value === "string" && UUID_PATTERN.test(value);
 }
 
 function isIsoTimestamp(value: unknown): value is string {
-  if (typeof value !== 'string') {
-    return false
+  if (typeof value !== "string") {
+    return false;
   }
-  const parsed = Date.parse(value)
-  return !Number.isNaN(parsed)
+  const parsed = Date.parse(value);
+  return !Number.isNaN(parsed);
 }
 
 /**
@@ -30,62 +26,55 @@ function isIsoTimestamp(value: unknown): value is string {
  * or unsupported message never crashes the dashboard - the caller just
  * discards it.
  */
-export function validateIncidentEvent(
-  value: unknown,
-): IncidentRealtimeEvent | null {
-  if (typeof value !== 'object' || value === null) {
-    return null
+export function validateIncidentEvent(value: unknown): IncidentRealtimeEvent | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
   }
 
-  const candidate = value as Record<string, unknown>
+  const candidate = value as Record<string, unknown>;
 
   if (!isUuid(candidate.eventId)) {
-    return null
+    return null;
   }
 
   if (
-    typeof candidate.eventType !== 'string' ||
-    !(INCIDENT_EVENT_TYPES as readonly string[]).includes(
-      candidate.eventType,
-    )
+    typeof candidate.eventType !== "string" ||
+    !(INCIDENT_EVENT_TYPES as readonly string[]).includes(candidate.eventType)
   ) {
-    return null
+    return null;
   }
 
   if (candidate.eventVersion !== 1) {
-    return null
+    return null;
   }
 
   if (!isIsoTimestamp(candidate.occurredAt)) {
-    return null
+    return null;
   }
 
   if (!isUuid(candidate.incidentId)) {
-    return null
+    return null;
   }
 
   if (!isNonEmptyString(candidate.serviceName)) {
-    return null
+    return null;
   }
 
   if (!isNonEmptyString(candidate.severity)) {
-    return null
+    return null;
   }
 
   if (!isNonEmptyString(candidate.status)) {
-    return null
+    return null;
   }
 
-  if (
-    candidate.previousStatus !== null &&
-    !isNonEmptyString(candidate.previousStatus)
-  ) {
-    return null
+  if (candidate.previousStatus !== null && !isNonEmptyString(candidate.previousStatus)) {
+    return null;
   }
 
   return {
     eventId: candidate.eventId,
-    eventType: candidate.eventType as IncidentRealtimeEvent['eventType'],
+    eventType: candidate.eventType as IncidentRealtimeEvent["eventType"],
     eventVersion: 1,
     occurredAt: candidate.occurredAt as string,
     incidentId: candidate.incidentId,
@@ -93,21 +82,19 @@ export function validateIncidentEvent(
     severity: candidate.severity,
     status: candidate.status,
     previousStatus: candidate.previousStatus as string | null,
-  }
+  };
 }
 
 /**
  * Parses and validates a raw WebSocket text frame. Returns null for
  * anything that is not valid JSON or does not match the event schema.
  */
-export function parseIncidentEvent(
-  raw: string,
-): IncidentRealtimeEvent | null {
-  let parsed: unknown
+export function parseIncidentEvent(raw: string): IncidentRealtimeEvent | null {
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw)
+    parsed = JSON.parse(raw);
   } catch {
-    return null
+    return null;
   }
-  return validateIncidentEvent(parsed)
+  return validateIncidentEvent(parsed);
 }

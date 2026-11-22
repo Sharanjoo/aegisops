@@ -334,7 +334,7 @@ Desktop host) to `http://incident-service:8080` (agent running in-cluster
 alongside it). RBAC is untouched - still `get`/`list`/`watch` on Pods
 only.
 
-See [`README.md`](../README.md#kubernetes-deployment-kind) for the actual
+See [`reference.md`](reference.md#kubernetes-deployment-kind) for the actual
 deploy/verify commands and directory listing.
 
 ### MySQL and Kafka

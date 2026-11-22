@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- Build stage: compiles the production bundle ----
-FROM node:22.23.2-alpine3.23 AS build
+FROM node:22.23.5-alpine3.23 AS build
 
 WORKDIR /app
 
@@ -16,7 +16,13 @@ RUN npm run build
 
 
 # ---- Runtime stage: static assets behind a non-root nginx, nothing else ----
-FROM nginxinc/nginx-unprivileged:1.29-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31.7-alpine AS runtime
+
+# Apply pending Alpine security patches that postdate the base image build,
+# then drop back to the image's non-root user.
+USER root
+RUN apk upgrade --no-cache
+USER nginx
 
 # Only these AEGISOPS_* variables are substituted into nginx.conf.template
 # at container start; nginx's own $host/$remote_addr/... variables must

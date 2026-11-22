@@ -1,19 +1,19 @@
-import { SeverityBadge } from './SeverityBadge'
-import { StatusBadge } from './StatusBadge'
-import type { Incident } from '../types/incident'
+import { SeverityBadge } from "./SeverityBadge";
+import { StatusBadge } from "./StatusBadge";
+import type { Incident } from "../types/incident";
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-})
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 function formatTimestamp(value: string): string {
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? value : timeFormatter.format(parsed)
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : timeFormatter.format(parsed);
 }
 
 interface IncidentTableProps {
-  incidents: Incident[]
+  incidents: Incident[];
 }
 
 export function IncidentTable({ incidents }: IncidentTableProps) {
@@ -43,19 +43,15 @@ export function IncidentTable({ incidents }: IncidentTableProps) {
                 <StatusBadge status={incident.status} />
               </td>
               <td>
-                <time dateTime={incident.createdAt}>
-                  {formatTimestamp(incident.createdAt)}
-                </time>
+                <time dateTime={incident.createdAt}>{formatTimestamp(incident.createdAt)}</time>
               </td>
               <td>
-                <time dateTime={incident.updatedAt}>
-                  {formatTimestamp(incident.updatedAt)}
-                </time>
+                <time dateTime={incident.updatedAt}>{formatTimestamp(incident.updatedAt)}</time>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
-  )
+  );
 }

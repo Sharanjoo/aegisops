@@ -1,9 +1,9 @@
-import { INCIDENT_SEVERITIES, INCIDENT_STATUSES } from '../types/incident'
-import type { IncidentFilters } from '../state/filterIncidents'
+import { INCIDENT_SEVERITIES, INCIDENT_STATUSES } from "../types/incident";
+import type { IncidentFilters } from "../state/filterIncidents";
 
 interface FiltersBarProps {
-  filters: IncidentFilters
-  onChange: (filters: IncidentFilters) => void
+  filters: IncidentFilters;
+  onChange: (filters: IncidentFilters) => void;
 }
 
 export function FiltersBar({ filters, onChange }: FiltersBarProps) {
@@ -16,9 +16,7 @@ export function FiltersBar({ filters, onChange }: FiltersBarProps) {
           type="search"
           placeholder="Service, title, or ID"
           value={filters.search}
-          onChange={(event) =>
-            onChange({ ...filters, search: event.target.value })
-          }
+          onChange={(event) => onChange({ ...filters, search: event.target.value })}
         />
       </div>
 
@@ -30,7 +28,7 @@ export function FiltersBar({ filters, onChange }: FiltersBarProps) {
           onChange={(event) =>
             onChange({
               ...filters,
-              status: event.target.value as IncidentFilters['status'],
+              status: event.target.value as IncidentFilters["status"],
             })
           }
         >
@@ -51,7 +49,7 @@ export function FiltersBar({ filters, onChange }: FiltersBarProps) {
           onChange={(event) =>
             onChange({
               ...filters,
-              severity: event.target.value as IncidentFilters['severity'],
+              severity: event.target.value as IncidentFilters["severity"],
             })
           }
         >
@@ -64,5 +62,5 @@ export function FiltersBar({ filters, onChange }: FiltersBarProps) {
         </select>
       </div>
     </search>
-  )
+  );
 }

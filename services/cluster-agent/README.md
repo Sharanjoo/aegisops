@@ -73,7 +73,7 @@ and
 (content unchanged, aside from one patch overriding
 `AEGISOPS_INCIDENT_SERVICE_URL` for in-cluster use) - see **Kubernetes
 Deployment** below and
-[`README.md`](../../README.md#kubernetes-deployment-kind) at the repo
+[`docs/reference.md`](../../docs/reference.md#kubernetes-deployment-kind) at the repo
 root for the full stack deployment.
 
 ## Configuration
@@ -168,7 +168,7 @@ The recommended path is the full-stack deployment script at the repo
 root - `pwsh infrastructure/scripts/deploy-kind.ps1` - which applies
 the namespace, RBAC, and this Deployment (plus the rest of the AegisOps
 stack) via Kustomize in the correct order. See
-[`README.md`](../../README.md#kubernetes-deployment-kind) at the repo
+[`docs/reference.md`](../../docs/reference.md#kubernetes-deployment-kind) at the repo
 root for the full flow.
 
 To apply only the agent's own manifests directly, from the repo root:

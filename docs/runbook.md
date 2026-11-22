@@ -1,14 +1,14 @@
 # AegisOps Kubernetes Runbook
 
 Operational reference for running the AegisOps stack in the local kind
-cluster. See [`README.md`](../README.md#kubernetes-deployment-kind) for a
+cluster. See [`reference.md`](reference.md#kubernetes-deployment-kind) for a
 shorter quick-start and [`architecture.md`](architecture.md#kubernetes-deployment-kind)
 for the topology and design rationale behind what's described here.
 
 ## Prerequisites
 
 - Docker Desktop, kind, and kubectl (see the repo root
-  [README.md Prerequisites](../README.md#prerequisites))
+  [reference.md Prerequisites](reference.md#prerequisites))
 - [PowerShell Core (`pwsh`)](https://github.com/PowerShell/PowerShell) -
   `deploy-kind.ps1`, `verify-kind.ps1`, and `e2e-kind.ps1` all require it
 - A running kind cluster named `aegisops-dev` (`kubectl config current-context`

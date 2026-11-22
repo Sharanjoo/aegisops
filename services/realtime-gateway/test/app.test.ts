@@ -11,7 +11,7 @@ const testConfig: AppConfig = {
   kafkaBrokers: ["localhost:9092"],
   kafkaClientId: "realtime-gateway-test",
   kafkaGroupId: "realtime-gateway-test",
-  incidentTopic: "aegisops.incident.events.v1"
+  incidentTopic: "aegisops.incident.events.v1",
 };
 
 describe("realtime gateway", () => {
@@ -24,18 +24,18 @@ describe("realtime gateway", () => {
 
   it("returns a successful health response", async () => {
     app = await buildApp(testConfig, {
-      logger: false
+      logger: false,
     });
 
     const response = await app.inject({
       method: "GET",
-      url: "/health"
+      url: "/health",
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       status: "UP",
-      service: "realtime-gateway"
+      service: "realtime-gateway",
     });
   });
 });

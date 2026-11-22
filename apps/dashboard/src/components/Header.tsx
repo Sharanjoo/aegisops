@@ -1,5 +1,5 @@
-import { ConnectionBadge } from './ConnectionBadge'
-import type { ConnectionState } from '../realtime/useIncidentSocket'
+import { ConnectionBadge } from "./ConnectionBadge";
+import type { ConnectionState } from "../realtime/useIncidentSocket";
 
 export function Header({ connectionState }: { connectionState: ConnectionState }) {
   return (
@@ -15,5 +15,5 @@ export function Header({ connectionState }: { connectionState: ConnectionState }
       </div>
       <ConnectionBadge state={connectionState} />
     </header>
-  )
+  );
 }
