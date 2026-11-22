@@ -163,9 +163,9 @@ cd .\services\incident-service
 
 ## Container Image
 
-`Dockerfile` is a multi-stage build: `eclipse-temurin:21.0.9_10-jdk-alpine`
+`Dockerfile` is a multi-stage build: `eclipse-temurin:21.0.13.1_2-jdk-alpine`
 compiles the jar with the Maven wrapper, and only the resulting jar is
-copied into an `eclipse-temurin:21.0.9_10-jre-alpine` runtime stage - no
+copied into an `eclipse-temurin:21.0.13.1_2-jre-alpine` runtime stage - no
 JDK, no build tooling, no source in the final image. The runtime process
 runs as a dedicated non-root `aegisops` user, and the image `HEALTHCHECK`
 polls the same `/actuator/health` endpoint used above.

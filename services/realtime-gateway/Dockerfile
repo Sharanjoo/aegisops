@@ -1,4 +1,4 @@
-FROM node:22.23.2-alpine3.23 AS dependencies
+FROM node:22.23.5-alpine3.23 AS dependencies
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ RUN npm run build \
     && npm prune --omit=dev
 
 
-FROM node:22.23.2-alpine3.23 AS runtime
+FROM node:22.23.5-alpine3.23 AS runtime
 
 ENV NODE_ENV=production
 

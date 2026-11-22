@@ -206,9 +206,9 @@ not otherwise restrict connections by origin.
 
 ## Container Image
 
-`Dockerfile` is a multi-stage build: `node:22.23.2-alpine3.23` installs
+`Dockerfile` is a multi-stage build: `node:22.23.5-alpine3.23` installs
 with `npm ci` and runs `npm run build`, and only the compiled
-`dist/` output is copied into an `nginxinc/nginx-unprivileged:1.29-alpine`
+`dist/` output is copied into an `nginxinc/nginx-unprivileged:1.31.7-alpine`
 runtime stage - no Node.js, no source, no dev dependencies, no test files
 in the final image. That image already runs as a non-root user and
 listens on the unprivileged port 8080.
